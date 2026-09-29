@@ -1,0 +1,16 @@
+{
+  "name": "Kinetra — The Movement System",
+  "short_name": "Kinetra",
+  "description": "An original manga-inspired movement practice progression game.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F2EA",
+  "theme_color": "#101318",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

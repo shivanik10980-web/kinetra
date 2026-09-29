@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+:root {
+  /* Kinetra Color System */
+  --ink: #101318;
+  --paper: #F5F2EA;
+  --paper-elevated: #FFFFFF;
+  --cyan: #57E5D6;
+  --cyan-dim: #2FA89B;
+  --cyan-subtle: rgba(87, 229, 214, 0.15);
+  --violet: #B8A2FF;
+  --violet-dim: #7C60CE;
+  --violet-subtle: rgba(184, 162, 255, 0.15);
+  --amber: #F5A623;
+  --crimson: #E03131;
+  --gray-muted: #7E8691;
+  --border-color: #101318;
+  --card-bg: #FFFFFF;
+  --card-shadow: 4px 4px 0px #101318;
+  
+  /* Defaults for Light (Paper) Theme */
+  --bg-primary: #F5F2EA;
+  --text-primary: #101318;
+  --text-secondary: #525B67;
+  --surface-panel: #FFFFFF;
+  --surface-inset: #ECE8DE;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #101318;
+  --text-primary: #F5F2EA;
+  --text-secondary: #A0AAB5;
+  --surface-panel: #1A1F26;
+  --surface-inset: #13171D;
+  --border-color: #384250;
+  --card-bg: #1A1F26;
+  --card-shadow: 4px 4px 0px #080A0D;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --bg-primary: #101318;
+    --text-primary: #F5F2EA;
+    --text-secondary: #A0AAB5;
+    --surface-panel: #1A1F26;
+    --surface-inset: #13171D;
+    --border-color: #384250;
+    --card-bg: #1A1F26;
+    --card-shadow: 4px 4px 0px #080A0D;
+  }
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Manga Panel Borders & Shadows */
+.manga-panel {
+  background: var(--card-bg);
+  border: 2px solid var(--border-color);
+  box-shadow: var(--card-shadow);
+  position: relative;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.manga-panel-interactive:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--border-color);
+}
+
+.manga-panel-interactive:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px var(--border-color);
+}
+
+/* Geometric Corner Brackets */
+.bracket-frame {
+  position: relative;
+}
+.bracket-frame::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 10px;
+  height: 10px;
+  border-top: 3px solid var(--cyan);
+  border-left: 3px solid var(--cyan);
+  pointer-events: none;
+  z-index: 10;
+}
+.bracket-frame::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-bottom: 3px solid var(--violet);
+  border-right: 3px solid var(--violet);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Halftone Pattern for empty spaces / manga accents */
+.halftone-accent {
+  background-image: radial-gradient(var(--border-color) 1.2px, transparent 1.2px);
+  background-size: 8px 8px;
+  opacity: 0.15;
+}
+
+/* Speed Lines (Manga dash pattern) */
+.speed-lines {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 10px,
+    rgba(87, 229, 214, 0.08) 10px,
+    rgba(87, 229, 214, 0.08) 12px
+  );
+}
+
+/* Accessible focus outlines */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* High contrast touch targets (minimum 44x44) */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .speed-lines {
+    background: none !important;
+  }
+}
+
+.reduced-motion-active *, .reduced-motion-active *::before, .reduced-motion-active *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+.reduced-motion-active .speed-lines {
+  background: none !important;
+}
+
+/* Status badge styles */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1.5px solid var(--border-color);
+}
