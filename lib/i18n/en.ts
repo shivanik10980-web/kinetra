@@ -9,8 +9,28 @@ export const en = {
   'nav.profile': 'Profile',
   'nav.demo': 'Replay Demo',
   'nav.roadmap': 'Roadmap',
+  'nav.avatar': 'Character RPG',
+  'nav.adventure': 'Adventure',
+  'nav.sports': 'Sports Lab',
   'nav.offline': 'Offline Ready',
   'nav.online': 'Local Only',
+
+  // Avatar RPG & Growth Studio
+  'avatar.title': 'Character RPG',
+  'avatar.customise': 'Customise Likeness',
+  'avatar.evolution_gate': 'Evolution Gate',
+  'studio.title': 'Muscle Growth Studio',
+  'studio.regions.chest': 'Chest',
+  'studio.regions.back': 'Back',
+  'studio.regions.arms': 'Arms',
+  'studio.regions.shoulders': 'Shoulders',
+  'studio.regions.core': 'Core',
+  'studio.regions.legs': 'Legs',
+  'currency.gp': 'Growth Points',
+  'currency.lifetime_xp': 'Lifetime XP',
+  'evolution.werewolf': 'Werewolf Lineage',
+  'evolution.tigerhuman': 'Tigerhuman Lineage',
+  'evolution.awakened': 'Awakened Lineage',
 
   // Common UI
   'action.start': 'Begin Practice',

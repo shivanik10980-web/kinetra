@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ExerciseDefinition, SessionSummary } from '@/lib/exercises/types';
+import { ExerciseDefinition, SessionSummary, SessionLifecycleState } from '@/lib/exercises/types';
 import { useTranslation } from '@/lib/i18n/context';
 import { MangaCard } from '../system/MangaCard';
-import { Play, Pause, Square, Plus, CheckCircle, Clock } from 'lucide-react';
+import { Play, Pause, Square, Plus, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 
 interface GuidedWorkoutProps {
   definition: ExerciseDefinition;
@@ -19,35 +19,78 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  const [sessionState, setSessionState] = useState<SessionLifecycleState>('preview');
   const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
-  const [isActive, setIsActive] = useState<boolean>(false);
   const [manualCount, setManualCount] = useState<number>(0);
   const [currentStepIdx, setCurrentStepIdx] = useState<number>(0);
 
-  const steps = [
-    'Sit tall and comfortably in your chair or on a stable cushion.',
-    'Take a slow, deep breath in through your nose, letting shoulders relax.',
-    'Gently rotate shoulders back 5 times, maintaining smooth easy breathing.',
-    'Turn your head slowly side to side within your natural comfortable range.',
-    'Bring both hands to your chest, pause for 10 seconds of calm rhythm.',
-  ];
+  // Exercise-specific guided steps
+  const getExerciseSteps = () => {
+    if (definition.id === 'squat') {
+      return [
+        'Stand or sit near a sturdy chair for balance support.',
+        'Inhale, softly bend hips and knees to a comfortable depth (no forced depth).',
+        'Pause at the bottom for 1-2 seconds with steady, calm breathing.',
+        'Push through your feet to rise smoothly back up to standing.',
+        'Pause at the top and take a full recovery breath before next cycle.',
+      ];
+    }
+    if (definition.id === 'elbow_flexion') {
+      return [
+        'Sit or stand comfortably with arms relaxed at your sides.',
+        'Smoothly bend your elbow, bringing hand toward shoulder with control.',
+        'Pause at peak comfortable flexion for 1-2 seconds.',
+        'Slowly lower your arm back to full comfortable extension.',
+        'Relax your shoulder, take a steady breath, and repeat or switch arms.',
+      ];
+    }
+    return [
+      'Sit tall and comfortably in your chair or on a stable cushion.',
+      'Take a slow, deep breath in through your nose, letting shoulders relax.',
+      'Gently rotate shoulders back 5 times, maintaining smooth easy breathing.',
+      'Turn your head slowly side to side within your natural comfortable range.',
+      'Bring both hands to your chest, pause for 10 seconds of calm rhythm.',
+    ];
+  };
+
+  const steps = getExerciseSteps();
 
   useEffect(() => {
-    let interval: any = null;
-    if (isActive) {
+    let interval: NodeJS.Timeout | null = null;
+    if (sessionState === 'active') {
       interval = setInterval(() => {
         setSecondsElapsed((prev) => prev + 1);
       }, 1000);
     }
-    return () => clearInterval(interval);
-  }, [isActive]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [sessionState]);
 
   const handleToggleTimer = () => {
-    setIsActive(!isActive);
+    if (sessionState === 'preview' || sessionState === 'paused') {
+      setSessionState('active');
+    } else if (sessionState === 'active') {
+      setSessionState('paused');
+    }
+  };
+
+  const handleRecordInterval = () => {
+    if (sessionState !== 'active') return;
+    setManualCount((prev) => prev + 1);
+  };
+
+  const handleNextStep = () => {
+    if (currentStepIdx < steps.length - 1) {
+      setCurrentStepIdx((prev) => prev + 1);
+    }
+    if (sessionState === 'active') {
+      setManualCount((prev) => prev + 1);
+    }
   };
 
   const handleFinish = () => {
-    setIsActive(false);
+    setSessionState('completed');
     const summary: SessionSummary = {
       id: `session_${Date.now()}_guided`,
       movement: definition.id,
@@ -55,15 +98,16 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
       source: 'guided',
       startedAt: new Date(Date.now() - secondsElapsed * 1000).toISOString(),
       endedAt: new Date().toISOString(),
-      totalActiveTimeSec: secondsElapsed,
-      totalValidTrackingTimeSec: secondsElapsed,
-      overallCoveragePercent: 100, // guided mode full participation
+      totalActiveTimeSec: Math.max(secondsElapsed, 1),
+      totalValidTrackingTimeSec: 0,
+      overallCoveragePercent: null, // Honest null for guided/no-camera (never claims 100% camera coverage)
       totalRepsCompleted: manualCount,
       scoredRepsCount: 0,
       medianQScore: null, // Q=null for guided mode, never fabricated
       isPreliminary: false,
       repDetails: [],
       observedCueIds: ['SESSION_SAVED'],
+      evidenceSummary: 'Guided session: self-reported participation and timer completion (no camera coverage was used).',
     };
     onFinishSession(summary);
   };
@@ -74,11 +118,24 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
     return `${mins}:${rem < 10 ? '0' : ''}${rem}`;
   };
 
+  // Determine instructions key: use guidedInstructionsKey if in guided mode
+  const instructionText = definition.guidedInstructionsKey
+    ? t(definition.guidedInstructionsKey as any)
+    : t(definition.instructionsKey as any);
+
   return (
     <div className="flex flex-col gap-6 max-w-2xl mx-auto">
       <MangaCard title={t(definition.nameKey as any)} badge="Accessible Guided Mode">
-        <p className="text-sm text-[var(--text-secondary)] mb-4">
-          {t(definition.instructionsKey as any)}
+        {/* Honest Mode Explanation */}
+        <div className="p-3 mb-4 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] flex items-center justify-between">
+          <span>Camera not active. Equal participation XP awarded upon completion.</span>
+          <span className="font-mono text-[10px] uppercase font-bold text-[var(--cyan-dim)]">
+            State: {sessionState}
+          </span>
+        </div>
+
+        <p className="text-sm text-[var(--text-secondary)] mb-4 leading-relaxed">
+          {instructionText}
         </p>
 
         {/* Timer & Count Display */}
@@ -115,22 +172,27 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
             <button
               onClick={() => setCurrentStepIdx((prev) => Math.max(0, prev - 1))}
               disabled={currentStepIdx === 0}
-              className="px-3 py-1 text-xs font-bold border border-[var(--border-color)] disabled:opacity-40"
+              className="px-3 py-1.5 text-xs font-bold border border-[var(--border-color)] disabled:opacity-40"
             >
-              Previous
+              Previous Step
             </button>
             <button
-              onClick={() => {
-                setCurrentStepIdx((prev) => Math.min(steps.length - 1, prev + 1));
-                setManualCount((prev) => prev + 1);
-              }}
+              onClick={handleNextStep}
               disabled={currentStepIdx === steps.length - 1}
-              className="px-3 py-1 text-xs font-bold bg-[var(--cyan)] border border-[var(--border-color)] text-[var(--ink)]"
+              className="px-3 py-1.5 text-xs font-bold bg-[var(--cyan)] border border-[var(--border-color)] text-[var(--ink)] disabled:opacity-40"
             >
-              Next Step & Record
+              {sessionState === 'active' ? 'Next Step & Count Interval' : 'Next Step'}
             </button>
           </div>
         </div>
+
+        {/* Unstarted Guard Warning */}
+        {sessionState === 'preview' && (
+          <div className="p-3 mb-4 bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 flex items-center gap-2 font-bold">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>Click &quot;Begin Practice&quot; below to start your timer and record intervals.</span>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t-2 border-[var(--border-color)]">
@@ -139,12 +201,20 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
               onClick={handleToggleTimer}
               className="touch-target px-5 py-2.5 bg-[var(--cyan)] text-[var(--ink)] font-black text-sm border-2 border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)] flex items-center gap-2"
             >
-              {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              {isActive ? t('action.pause') : t('action.start')}
+              {sessionState === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {sessionState === 'preview'
+                ? t('action.start')
+                : sessionState === 'active'
+                ? t('action.pause')
+                : t('action.resume')}
             </button>
+
+            {/* Manual interval button: disabled in preview state */}
             <button
-              onClick={() => setManualCount((c) => c + 1)}
-              className="touch-target px-4 py-2 border-2 border-[var(--border-color)] bg-[var(--surface-inset)] font-bold text-sm flex items-center gap-1.5"
+              onClick={handleRecordInterval}
+              disabled={sessionState !== 'active'}
+              title={sessionState !== 'active' ? 'Start practice first to record intervals' : 'Record interval'}
+              className="touch-target px-4 py-2 border-2 border-[var(--border-color)] bg-[var(--surface-inset)] font-bold text-sm flex items-center gap-1.5 disabled:opacity-35 disabled:cursor-not-allowed"
             >
               <Plus className="w-4 h-4" />
               Interval
@@ -162,7 +232,8 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
             )}
             <button
               onClick={handleFinish}
-              className="touch-target px-5 py-2.5 bg-[var(--crimson)] text-white font-black text-sm border-2 border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)] flex items-center gap-2"
+              disabled={sessionState === 'preview' && manualCount === 0 && secondsElapsed === 0}
+              className="touch-target px-5 py-2.5 bg-[var(--crimson)] text-white font-black text-sm border-2 border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)] flex items-center gap-2 disabled:opacity-40"
             >
               <Square className="w-4 h-4" />
               {t('action.stop')}

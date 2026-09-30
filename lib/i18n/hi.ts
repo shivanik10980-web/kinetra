@@ -11,8 +11,28 @@ export const hi: Record<TranslationKey, string> = {
   'nav.profile': 'प्रोफ़ाइल',
   'nav.demo': 'सिम्युलेटेड डेमो',
   'nav.roadmap': 'रोडमैप',
+  'nav.avatar': 'अवतार RPG',
+  'nav.adventure': 'रोमांच यात्रा',
+  'nav.sports': 'स्पोर्ट्स लैब',
   'nav.offline': 'ऑफ़लाइन सक्रिय',
   'nav.online': 'स्थानीय डिवाइस',
+
+  // Avatar RPG & Growth Studio
+  'avatar.title': 'चरित्र RPG',
+  'avatar.customise': 'स्वरूप अनुकूलन',
+  'avatar.evolution_gate': 'इवोल्यूशन गेट',
+  'studio.title': 'मसल ग्रोथ स्टूडियो',
+  'studio.regions.chest': 'छाती',
+  'studio.regions.back': 'पीठ',
+  'studio.regions.arms': 'भुजाएँ',
+  'studio.regions.shoulders': 'कंधे',
+  'studio.regions.core': 'कोर',
+  'studio.regions.legs': 'पैर',
+  'currency.gp': 'ग्रोथ पॉइंट्स (GP)',
+  'currency.lifetime_xp': 'लाइफटाइम XP',
+  'evolution.werewolf': 'वेयरवुल्फ़ वंशावली',
+  'evolution.tigerhuman': 'टाइगर-ह्यूमन वंशावली',
+  'evolution.awakened': 'जागृत वंशावली',
 
   // Common UI
   'action.start': 'अभ्यास शुरू करें',

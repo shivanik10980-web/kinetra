@@ -263,17 +263,36 @@ export class DrillEngine {
     };
   }
 
-  public createSessionSummary(options?: { reflection?: string }): SportsSessionSummary {
+  public createSessionSummary(options?: { reflection?: string; elapsedSec?: number }): SportsSessionSummary {
     const meanConfidence =
       this.confidenceSampleCount > 0
         ? Math.round((this.confidenceAccumulator / this.confidenceSampleCount) * 100) / 100
         : null;
 
+    const computedDuration =
+      options?.elapsedSec !== undefined
+        ? options.elapsedSec
+        : this.activeTimeMs > 0
+        ? Math.round(this.activeTimeMs / 1000)
+        : this.startTimeMs > 0
+        ? Math.max(1, Math.round((Date.now() - this.startTimeMs) / 1000))
+        : 0;
+
     const nowIso = new Date().toISOString();
     const startedIso =
       this.startTimeMs > 0
-        ? new Date(Date.now() - (this.activeTimeMs || 1000)).toISOString()
+        ? new Date(Date.now() - computedDuration * 1000).toISOString()
         : nowIso;
+
+    // Honest coverage & unknown accounting: 0 if manual/guided
+    if (this.source === 'guided' || this.drill.mode === 'manual' || this.drill.mode === 'timed') {
+      this.unknownItems.add('Optical Camera Feed (Guided/Manual Mode)');
+    }
+
+    const coverage =
+      this.source === 'guided' || this.drill.mode === 'manual' || this.drill.mode === 'timed'
+        ? 0
+        : this.getCoverage();
 
     return {
       id: `sports_${this.drill.id}_${Date.now()}`,
@@ -284,9 +303,9 @@ export class DrillEngine {
       source: this.source,
       startedAt: startedIso,
       endedAt: nowIso,
-      durationSec: Math.round(this.activeTimeMs / 1000),
+      durationSec: Math.max(1, computedDuration),
       completedIntervals: this.completedIntervals,
-      trackingCoverage: this.getCoverage(),
+      trackingCoverage: coverage,
       meanConfidence,
       observedCuesCount: { ...this.observedCuesCount },
       unknownItems: Array.from(this.unknownItems),

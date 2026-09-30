@@ -5,6 +5,7 @@ import { SportsSessionSummary } from '@/lib/sports/types';
 import { useTranslation } from '@/lib/i18n/context';
 import { MangaCard } from '../system/MangaCard';
 import { applyReward } from '@/lib/game/progression';
+import { creditRewardGrowthPoints } from '@/lib/game/currency';
 import { defaultStorage } from '@/lib/storage/indexeddb';
 import { Award, CheckCircle, HelpCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 
@@ -71,6 +72,24 @@ export const DrillReviewModal: React.FC<DrillReviewModalProps> = ({ summary, onC
     }
 
     await defaultStorage.saveProgression(prog);
+
+    // Credit Growth Points (GP) atomically to wallet
+    if (totalGained > 0) {
+      const wallet = await defaultStorage.getWallet();
+      const ledger = await defaultStorage.getTransactions();
+      const creditRes = creditRewardGrowthPoints(
+        wallet,
+        ledger,
+        `sports_${summary.id}`,
+        totalGained,
+        `Sports drill session (${summary.sportId} - ${summary.drillId})`
+      );
+      if (creditRes.success) {
+        await defaultStorage.saveWallet(creditRes.newWallet);
+        await defaultStorage.saveTransactions(creditRes.newLedger);
+      }
+    }
+
     setAwardedXp(totalGained);
     setIsSaved(true);
   };
@@ -99,16 +118,26 @@ export const DrillReviewModal: React.FC<DrillReviewModalProps> = ({ summary, onC
               <div className="text-[11px] font-extrabold uppercase text-[var(--text-secondary)]">
                 Coverage
               </div>
-              <div className="text-3xl font-black mt-1">{summary.trackingCoverage}%</div>
+              <div className="text-2xl sm:text-3xl font-black mt-1">
+                {summary.source === 'live' ? `${summary.trackingCoverage}%` : 'N/A'}
+              </div>
+              {summary.source !== 'live' && (
+                <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">No camera used</div>
+              )}
             </div>
 
             <div className="manga-panel p-3 bg-[var(--surface-inset)] text-center">
               <div className="text-[11px] font-extrabold uppercase text-[var(--text-secondary)]">
                 Confidence
               </div>
-              <div className="text-3xl font-black mt-1 text-[var(--cyan-dim)]">
-                {summary.meanConfidence !== null ? `${Math.round(summary.meanConfidence * 100)}%` : '—'}
+              <div className="text-2xl sm:text-3xl font-black mt-1 text-[var(--cyan-dim)]">
+                {summary.source === 'live' && summary.meanConfidence !== null
+                  ? `${Math.round(summary.meanConfidence * 100)}%`
+                  : '—'}
               </div>
+              {summary.source !== 'live' && (
+                <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">Self-paced</div>
+              )}
             </div>
           </div>
 
@@ -121,31 +150,48 @@ export const DrillReviewModal: React.FC<DrillReviewModalProps> = ({ summary, onC
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
-                  <strong>Observed Evidence:</strong> Stance dwell, movement transitions, posture stability.
+                  <strong>Observed Evidence:</strong>{' '}
+                  {summary.source === 'live'
+                    ? 'Stance dwell, movement transitions, posture stability from optical feed.'
+                    : 'Self-reported cadence and manual interval confirmations. No camera joint tracking was used or claimed.'}
                 </span>
               </div>
-              {summary.unknownItems.length > 0 ? (
-                <div className="flex items-start gap-2 text-amber-700 bg-amber-50 p-2 border border-amber-300">
-                  <HelpCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Items Left Unknown:</strong>{' '}
-                    {summary.unknownItems.join(', ')}. (Never substituted with a fabricated score).
+              {summary.source === 'live' ? (
+                summary.unknownItems.length > 0 ? (
+                  <div className="flex items-start gap-2 text-amber-700 bg-amber-50 p-2 border border-amber-300">
+                    <HelpCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Items Left Unknown:</strong>{' '}
+                      {summary.unknownItems.join(', ')}. (Never substituted with a fabricated score).
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-[var(--text-secondary)]">
+                    All expected camera joints remained within required confidence thresholds.
+                  </div>
+                )
               ) : (
-                <div className="text-[var(--text-secondary)]">
-                  All expected camera joints remained within required confidence thresholds.
+                <div className="text-[var(--text-secondary)] bg-[var(--surface-inset)] p-2 border border-[var(--border-color)]">
+                  Equal participation rewards applied for manual/guided practice without fabricated sensor data.
                 </div>
               )}
             </div>
           </div>
+
+          {/* Pending Reward Banner (Before Saving) */}
+          {!isSaved && (
+            <div className="manga-panel p-3 mb-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center justify-between">
+              <span>Status: Practice Pending Save</span>
+              <span>Potential: +30 XP Practice / +10 XP Reflection</span>
+            </div>
+          )}
 
           {/* Reflection */}
           {!isSaved && (
             <div className="mb-6 flex flex-col gap-2">
               <label htmlFor="sports-reflection" className="font-extrabold text-sm flex items-center justify-between">
                 <span>Drill Reflection & Balance Note</span>
-                <span className="text-xs text-[var(--violet-dim)] font-bold">+10 XP</span>
+                <span className="text-xs text-[var(--violet-dim)] font-bold">+10 XP Pending</span>
               </label>
               <textarea
                 id="sports-reflection"
@@ -163,10 +209,10 @@ export const DrillReviewModal: React.FC<DrillReviewModalProps> = ({ summary, onC
             <div className="manga-panel p-4 mb-6 bg-[var(--paper)] border-2 border-[var(--border-color)] text-center">
               <CheckCircle className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
               <div className="font-black text-lg uppercase tracking-wide">
-                Sports Practice Logged
+                Sports Practice Logged & Saved
               </div>
               <div className="text-sm font-extrabold text-[var(--cyan-dim)] mt-1">
-                +{awardedXp} XP Awarded Today (Capped at 40 XP/day)
+                +{awardedXp} XP Awarded & +{awardedXp} GP Added to Wallet (Capped at 40 XP/day)
               </div>
             </div>
           )}

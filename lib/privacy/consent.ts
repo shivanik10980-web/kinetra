@@ -5,7 +5,7 @@ export interface SanitizedCoachPayload {
   locale: 'en' | 'hi';
   repsCompleted: number;
   scoredReps: number;
-  coveragePercent: number;
+  coveragePercent: number | null;
   medianQScore: number | null;
   observedCueIds: string[];
   userReflection?: string;

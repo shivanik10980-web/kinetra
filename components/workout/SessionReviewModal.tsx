@@ -5,6 +5,7 @@ import { SessionSummary } from '@/lib/exercises/types';
 import { useTranslation } from '@/lib/i18n/context';
 import { MangaCard } from '../system/MangaCard';
 import { applyReward } from '@/lib/game/progression';
+import { creditRewardGrowthPoints } from '@/lib/game/currency';
 import { defaultStorage } from '@/lib/storage/indexeddb';
 import { sanitizeSessionForCloudCoach } from '@/lib/privacy/consent';
 import {
@@ -77,6 +78,23 @@ export const SessionReviewModal: React.FC<SessionReviewModalProps> = ({ summary,
 
     await defaultStorage.saveProgression(currentProgression);
 
+    // 3. Credit Growth Points (GP) atomically to wallet
+    if (totalGained > 0) {
+      const wallet = await defaultStorage.getWallet();
+      const ledger = await defaultStorage.getTransactions();
+      const creditRes = creditRewardGrowthPoints(
+        wallet,
+        ledger,
+        `session_${summary.id}`,
+        totalGained,
+        `Movement practice session (${summary.movement})`
+      );
+      if (creditRes.success) {
+        await defaultStorage.saveWallet(creditRes.newWallet);
+        await defaultStorage.saveTransactions(creditRes.newLedger);
+      }
+    }
+
     setAwardedXp(totalGained);
     setIsSaved(true);
   };
@@ -137,8 +155,11 @@ export const SessionReviewModal: React.FC<SessionReviewModalProps> = ({ summary,
                 {t('review.coverage')}
               </div>
               <div className="text-2xl sm:text-3xl font-black mt-1">
-                {summary.overallCoveragePercent}%
+                {summary.overallCoveragePercent !== null ? `${summary.overallCoveragePercent}%` : 'N/A'}
               </div>
+              {summary.overallCoveragePercent === null && (
+                <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">No camera used</div>
+              )}
             </div>
           </div>
 
@@ -152,22 +173,30 @@ export const SessionReviewModal: React.FC<SessionReviewModalProps> = ({ summary,
 
           {summary.source === 'guided' && (
             <div className="p-3 mb-4 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
-              Accessible guided session. Equal 30 XP awarded; no artificial pose score generated.
+              {summary.evidenceSummary || 'Accessible guided session. Equal 30 XP awarded; no artificial pose score generated.'}
             </div>
           )}
 
           {/* Score Formula Transparency Card */}
-          <div className="p-3 mb-6 bg-[var(--surface-panel)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
+          <div className="p-3 mb-4 bg-[var(--surface-panel)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
             <span className="font-extrabold text-[var(--text-primary)]">Score Calculation: </span>
             {t('review.q_formula_note')}
           </div>
+
+          {/* Pending Reward Banner (Before Saving) */}
+          {!isSaved && (
+            <div className="manga-panel p-3 mb-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center justify-between">
+              <span>Status: Session Pending Save</span>
+              <span>Potential: +30 XP Practice / +10 XP Reflection</span>
+            </div>
+          )}
 
           {/* Reflection Slot (+10 XP) */}
           {!isSaved && (
             <div className="mb-6 flex flex-col gap-2">
               <label htmlFor="session-reflection" className="font-extrabold text-sm flex items-center justify-between">
                 <span>{t('review.reflection_prompt')}</span>
-                <span className="text-xs text-[var(--violet-dim)] font-bold">+10 XP</span>
+                <span className="text-xs text-[var(--violet-dim)] font-bold">+10 XP Pending</span>
               </label>
               <textarea
                 id="session-reflection"
@@ -207,7 +236,7 @@ export const SessionReviewModal: React.FC<SessionReviewModalProps> = ({ summary,
                 Session Saved to Local Ledger
               </div>
               <div className="text-sm font-extrabold text-[var(--cyan-dim)] mt-1">
-                +{awardedXp} XP Awarded Today (Capped at 40 XP/day)
+                +{awardedXp} XP Awarded & +{awardedXp} GP Added to Wallet (Capped at 40 XP/day)
               </div>
             </div>
           )}

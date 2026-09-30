@@ -67,6 +67,7 @@ export interface ExerciseDefinition {
   category: 'camera' | 'guided';
   descriptionKey: string;
   instructionsKey: string;
+  guidedInstructionsKey?: string;
   disclaimerKey: string;
   variants: ExerciseVariant[];
   requiredJoints: {
@@ -81,6 +82,8 @@ export interface ExerciseDefinition {
   ): { angle: number | null; confidence: number };
 }
 
+export type SessionLifecycleState = 'preview' | 'active' | 'paused' | 'completed' | 'saved';
+
 export interface SessionSummary {
   id: string;
   movement: MovementType;
@@ -90,7 +93,7 @@ export interface SessionSummary {
   endedAt: string;   // ISO
   totalActiveTimeSec: number;
   totalValidTrackingTimeSec: number;
-  overallCoveragePercent: number;
+  overallCoveragePercent: number | null; // null for guided/no-camera
   totalRepsCompleted: number;
   scoredRepsCount: number;
   medianQScore: number | null;
@@ -99,4 +102,5 @@ export interface SessionSummary {
   observedCueIds: CueId[];
   userReflection?: string;
   selfReportedEffort?: 'comfortable' | 'moderate' | 'challenging' | 'restorative';
+  evidenceSummary?: string;
 }

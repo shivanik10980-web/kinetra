@@ -22,6 +22,8 @@ import {
   PlaySquare,
   Trophy,
   Target,
+  User,
+  Map,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -75,11 +77,12 @@ export const Navbar: React.FC = () => {
 
   const navLinks = [
     { href: '/dashboard', label: t('nav.dashboard'), icon: Activity },
-    { href: '/quests', label: t('nav.quests'), icon: Award },
+    { href: '/avatar', label: t('nav.avatar') || 'Avatar', icon: User },
+    { href: '/adventure', label: t('nav.adventure') || 'Adventure', icon: Map },
     { href: '/workout', label: t('nav.workout'), icon: Compass },
+    { href: '/quests', label: t('nav.quests'), icon: Award },
     ...(sportsLabEnabled ? [{ href: '/sports', label: 'Sports Lab', icon: Target }] : []),
     { href: '/history', label: t('nav.history'), icon: Calendar },
-    { href: '/demo', label: t('nav.demo'), icon: PlaySquare },
     { href: '/profile', label: t('nav.profile'), icon: ShieldCheck },
   ];
 
@@ -87,7 +90,7 @@ export const Navbar: React.FC = () => {
     <header className="border-b-2 border-[var(--border-color)] bg-[var(--surface-panel)] sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-2 touch-target focus-visible:ring">
+        <Link href="/" className="flex items-center gap-2 touch-target focus-visible:ring" aria-label="Kinetra Home">
           <div className="w-8 h-8 bg-[var(--cyan)] border-2 border-[var(--border-color)] flex items-center justify-center font-black text-sm text-[var(--ink)] shadow-[2px_2px_0px_var(--border-color)]">
             K
           </div>
@@ -101,7 +104,7 @@ export const Navbar: React.FC = () => {
           </div>
         </Link>
 
-        {/* Navigation Links */}
+        {/* Navigation Links with persistent accessible names and titles */}
         <nav aria-label="Main Navigation" className="flex items-center gap-1 sm:gap-2 flex-wrap">
           {navLinks.map((link) => {
             const Icon = link.icon;
@@ -110,13 +113,15 @@ export const Navbar: React.FC = () => {
               <Link
                 key={link.href}
                 href={link.href}
+                aria-label={link.label}
+                title={link.label}
                 className={`touch-target px-2.5 sm:px-3 py-1 text-sm font-bold border transition-colors flex items-center gap-1.5 ${
                   isActive
                     ? 'bg-[var(--cyan)] text-[var(--ink)] border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)]'
                     : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-color)]'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span className="hidden md:inline">{link.label}</span>
               </Link>
             );

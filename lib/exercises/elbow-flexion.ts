@@ -8,6 +8,7 @@ export const ELBOW_FLEXION_DEFINITION: ExerciseDefinition = {
   category: 'camera',
   descriptionKey: 'exercise.elbow.desc',
   instructionsKey: 'exercise.elbow.instructions',
+  guidedInstructionsKey: 'exercise.elbow.guided_instructions',
   disclaimerKey: 'exercise.elbow.disclaimer',
   variants: [
     {

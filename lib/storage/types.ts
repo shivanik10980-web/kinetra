@@ -1,5 +1,14 @@
 import { SessionSummary } from '../exercises/types';
 import { ProgressionState } from '../game/types';
+import {
+  WalletState,
+  TransactionRecord,
+  AvatarCustomization,
+  AvatarProgression,
+  DEFAULT_AVATAR_CUSTOMIZATION,
+  DEFAULT_AVATAR_PROGRESSION,
+  DEFAULT_WALLET_STATE,
+} from '../avatar/types';
 
 export interface UserProfile {
   id: string;
@@ -29,6 +38,16 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   updatedAt: new Date().toISOString(),
 };
 
+export interface AvatarState {
+  customization: AvatarCustomization;
+  progression: AvatarProgression;
+}
+
+export const DEFAULT_AVATAR_STATE: AvatarState = {
+  customization: { ...DEFAULT_AVATAR_CUSTOMIZATION },
+  progression: { ...DEFAULT_AVATAR_PROGRESSION },
+};
+
 export interface StorageAdapter {
   getProfile(): Promise<UserProfile>;
   saveProfile(profile: UserProfile): Promise<void>;
@@ -37,6 +56,19 @@ export interface StorageAdapter {
   getSessions(filter?: { movement?: string }): Promise<SessionSummary[]>;
   saveSession(session: SessionSummary): Promise<void>;
   deleteSession(id: string): Promise<void>;
-  exportData(): Promise<{ profile: UserProfile; progression: ProgressionState; sessions: SessionSummary[] }>;
+  getWallet(): Promise<WalletState>;
+  saveWallet(wallet: WalletState): Promise<void>;
+  getAvatar(): Promise<AvatarState>;
+  saveAvatar(avatar: AvatarState): Promise<void>;
+  getTransactions(): Promise<TransactionRecord[]>;
+  saveTransactions(transactions: TransactionRecord[]): Promise<void>;
+  exportData(): Promise<{
+    profile: UserProfile;
+    progression: ProgressionState;
+    sessions: SessionSummary[];
+    wallet: WalletState;
+    avatar: AvatarState;
+    transactions: TransactionRecord[];
+  }>;
   clearAllData(): Promise<void>;
 }

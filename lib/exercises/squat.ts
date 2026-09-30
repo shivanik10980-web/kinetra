@@ -8,6 +8,7 @@ export const SQUAT_DEFINITION: ExerciseDefinition = {
   category: 'camera',
   descriptionKey: 'exercise.squat.desc',
   instructionsKey: 'exercise.squat.instructions',
+  guidedInstructionsKey: 'exercise.squat.guided_instructions',
   disclaimerKey: 'exercise.squat.disclaimer',
   variants: [
     {

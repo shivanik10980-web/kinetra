@@ -233,7 +233,8 @@ export default function LiveDrillPage() {
   const handleFinish = () => {
     stopCamera();
     if (engine) {
-      const summary = engine.createSessionSummary();
+      const elapsed = drill.defaultDurationSec - secondsRemaining;
+      const summary = engine.createSessionSummary({ elapsedSec: elapsed > 0 ? elapsed : 1 });
       setReviewSummary(summary);
     }
   };

@@ -1,7 +1,19 @@
 import { SessionSummary } from '../exercises/types';
 import { ProgressionState } from '../game/types';
 import { INITIAL_PROGRESSION_STATE } from '../game/progression';
-import { StorageAdapter, UserProfile, DEFAULT_USER_PROFILE } from './types';
+import {
+  StorageAdapter,
+  UserProfile,
+  DEFAULT_USER_PROFILE,
+  AvatarState,
+  DEFAULT_AVATAR_STATE,
+} from './types';
+import {
+  WalletState,
+  TransactionRecord,
+  DEFAULT_WALLET_STATE,
+} from '../avatar/types';
+import { migrateHistoricalXpToGp } from '../game/currency';
 
 const DB_NAME = 'kinetra_local_db';
 const DB_VERSION = 1;
@@ -10,6 +22,9 @@ class MemoryStorageAdapter implements StorageAdapter {
   private profile: UserProfile = { ...DEFAULT_USER_PROFILE };
   private progression: ProgressionState = { ...INITIAL_PROGRESSION_STATE };
   private sessions: SessionSummary[] = [];
+  private wallet: WalletState | null = null;
+  private avatar: AvatarState = JSON.parse(JSON.stringify(DEFAULT_AVATAR_STATE));
+  private transactions: TransactionRecord[] = [];
 
   async getProfile(): Promise<UserProfile> {
     return { ...this.profile };
@@ -47,11 +62,50 @@ class MemoryStorageAdapter implements StorageAdapter {
     this.sessions = this.sessions.filter((s) => s.id !== id);
   }
 
-  async exportData(): Promise<{ profile: UserProfile; progression: ProgressionState; sessions: SessionSummary[] }> {
+  async getWallet(): Promise<WalletState> {
+    if (!this.wallet) {
+      const { wallet, transactions } = migrateHistoricalXpToGp(this.progression, null);
+      this.wallet = wallet;
+      this.transactions.push(...transactions);
+    }
+    return JSON.parse(JSON.stringify(this.wallet));
+  }
+
+  async saveWallet(wallet: WalletState): Promise<void> {
+    this.wallet = JSON.parse(JSON.stringify(wallet));
+  }
+
+  async getAvatar(): Promise<AvatarState> {
+    return JSON.parse(JSON.stringify(this.avatar));
+  }
+
+  async saveAvatar(avatar: AvatarState): Promise<void> {
+    this.avatar = JSON.parse(JSON.stringify(avatar));
+  }
+
+  async getTransactions(): Promise<TransactionRecord[]> {
+    return JSON.parse(JSON.stringify(this.transactions));
+  }
+
+  async saveTransactions(transactions: TransactionRecord[]): Promise<void> {
+    this.transactions = JSON.parse(JSON.stringify(transactions));
+  }
+
+  async exportData(): Promise<{
+    profile: UserProfile;
+    progression: ProgressionState;
+    sessions: SessionSummary[];
+    wallet: WalletState;
+    avatar: AvatarState;
+    transactions: TransactionRecord[];
+  }> {
     return {
       profile: await this.getProfile(),
       progression: await this.getProgression(),
       sessions: await this.getSessions(),
+      wallet: await this.getWallet(),
+      avatar: await this.getAvatar(),
+      transactions: await this.getTransactions(),
     };
   }
 
@@ -59,6 +113,9 @@ class MemoryStorageAdapter implements StorageAdapter {
     this.profile = { ...DEFAULT_USER_PROFILE };
     this.progression = { ...INITIAL_PROGRESSION_STATE };
     this.sessions = [];
+    this.wallet = null;
+    this.avatar = JSON.parse(JSON.stringify(DEFAULT_AVATAR_STATE));
+    this.transactions = [];
   }
 }
 
@@ -75,7 +132,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
       this.dbPromise = new Promise((resolve, reject) => {
         const req = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-        req.onupgradeneeded = (e) => {
+        req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains('profile')) {
             db.createObjectStore('profile', { keyPath: 'key' });
@@ -98,7 +155,10 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     return this.dbPromise;
   }
 
-  private async safeExecute<T>(fn: (db: IDBDatabase) => Promise<T>, fallbackFn: (mem: MemoryStorageAdapter) => Promise<T>): Promise<T> {
+  private async safeExecute<T>(
+    fn: (db: IDBDatabase) => Promise<T>,
+    fallbackFn: (mem: MemoryStorageAdapter) => Promise<T>
+  ): Promise<T> {
     try {
       const db = await this.getDB();
       return await fn(db);
@@ -167,6 +227,104 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     );
   }
 
+  async getWallet(): Promise<WalletState> {
+    const rawWallet = await this.safeExecute<WalletState | null>(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction('progression', 'readonly');
+          const store = tx.objectStore('progression');
+          const req = store.get('wallet_state');
+          req.onsuccess = () => resolve(req.result?.data || null);
+          req.onerror = () => reject(req.error);
+        }),
+      (mem) => mem.getWallet()
+    );
+
+    if (rawWallet && rawWallet.migrationMarker) {
+      return rawWallet;
+    }
+
+    // Perform one-time migration from historical progression
+    const prog = await this.getProgression();
+    const { wallet, transactions } = migrateHistoricalXpToGp(prog, rawWallet);
+    await this.saveWallet(wallet);
+    if (transactions.length > 0) {
+      const existingTx = await this.getTransactions();
+      await this.saveTransactions([...transactions, ...existingTx]);
+    }
+    return wallet;
+  }
+
+  async saveWallet(wallet: WalletState): Promise<void> {
+    return this.safeExecute(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction('progression', 'readwrite');
+          const store = tx.objectStore('progression');
+          const req = store.put({ key: 'wallet_state', data: wallet });
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }),
+      (mem) => mem.saveWallet(wallet)
+    );
+  }
+
+  async getAvatar(): Promise<AvatarState> {
+    return this.safeExecute(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction('progression', 'readonly');
+          const store = tx.objectStore('progression');
+          const req = store.get('avatar_state');
+          req.onsuccess = () => resolve(req.result?.data || DEFAULT_AVATAR_STATE);
+          req.onerror = () => reject(req.error);
+        }),
+      (mem) => mem.getAvatar()
+    );
+  }
+
+  async saveAvatar(avatar: AvatarState): Promise<void> {
+    return this.safeExecute(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction('progression', 'readwrite');
+          const store = tx.objectStore('progression');
+          const req = store.put({ key: 'avatar_state', data: avatar });
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }),
+      (mem) => mem.saveAvatar(avatar)
+    );
+  }
+
+  async getTransactions(): Promise<TransactionRecord[]> {
+    return this.safeExecute(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction('progression', 'readonly');
+          const store = tx.objectStore('progression');
+          const req = store.get('transactions_ledger');
+          req.onsuccess = () => resolve(req.result?.data || []);
+          req.onerror = () => reject(req.error);
+        }),
+      (mem) => mem.getTransactions()
+    );
+  }
+
+  async saveTransactions(transactions: TransactionRecord[]): Promise<void> {
+    return this.safeExecute(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction('progression', 'readwrite');
+          const store = tx.objectStore('progression');
+          const req = store.put({ key: 'transactions_ledger', data: transactions });
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }),
+      (mem) => mem.saveTransactions(transactions)
+    );
+  }
+
   async getSessions(filter?: { movement?: string }): Promise<SessionSummary[]> {
     return this.safeExecute(
       (db) =>
@@ -218,11 +376,21 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     );
   }
 
-  async exportData(): Promise<{ profile: UserProfile; progression: ProgressionState; sessions: SessionSummary[] }> {
+  async exportData(): Promise<{
+    profile: UserProfile;
+    progression: ProgressionState;
+    sessions: SessionSummary[];
+    wallet: WalletState;
+    avatar: AvatarState;
+    transactions: TransactionRecord[];
+  }> {
     const profile = await this.getProfile();
     const progression = await this.getProgression();
     const sessions = await this.getSessions();
-    return { profile, progression, sessions };
+    const wallet = await this.getWallet();
+    const avatar = await this.getAvatar();
+    const transactions = await this.getTransactions();
+    return { profile, progression, sessions, wallet, avatar, transactions };
   }
 
   async clearAllData(): Promise<void> {
@@ -241,13 +409,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 }
 
-/**
- * Isolated Demo Storage Adapter.
- * Replays, synthetic tests, and demos use this adapter so that NO fake data
- * can ever bleed into the user's real IndexedDB or ledger.
- */
 export class DemoStorageAdapter extends MemoryStorageAdapter {}
 
-// Singleton default export for application usage
 export const defaultStorage = new IndexedDBStorageAdapter();
 export const demoStorage = new DemoStorageAdapter();
