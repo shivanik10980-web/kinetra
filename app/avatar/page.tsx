@@ -43,6 +43,7 @@ import {
   Package,
   Check,
 } from 'lucide-react';
+import { RedeemCodeBox } from '@/components/avatar/RedeemCodeBox';
 
 export default function CharacterHomePage() {
   const [customization, setCustomization] = useState<AvatarCustomization>(
@@ -262,6 +263,12 @@ export default function CharacterHomePage() {
               Focus tokens add up to +5 points to eligible mastery rewards within the 60 daily cap. Never sold for real currency.
             </p>
           </div>
+
+          {/* Redeem Secret / Promo Code Card */}
+          <RedeemCodeBox
+            wallet={wallet}
+            onRedeemed={(updated) => setWallet(updated)}
+          />
         </div>
 
         {/* Right Column: Growth Studio Entry, Evolution Status, Adventure */}

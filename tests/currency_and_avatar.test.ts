@@ -9,6 +9,7 @@ import {
   checkEvolutionEligibility,
   checkTitleUnlocks,
   awakenLineage,
+  redeemPromoCode,
 } from '../lib/game/currency';
 import {
   GAME_ECONOMY,
@@ -220,6 +221,37 @@ describe('XP, Growth Points (GP) Currency & Migration Tests', () => {
     assert.strictEqual(newAllocation.thighs, 3);
     assert.strictEqual(newAllocation.calves, 3);
     assert.strictEqual(newAllocation.neck, 3);
+  });
+
+  it('Redeem code gpzoo grants 1,000 GP idempotently', () => {
+    const initialWallet: WalletState = {
+      ...DEFAULT_WALLET_STATE,
+      growthPoints: 50,
+      lifetimeGpEarned: 50,
+    };
+
+    // Valid redemption with mixed casing & whitespace
+    const res1 = redeemPromoCode(initialWallet, '  gPzOo  ', []);
+    assert.strictEqual(res1.success, true);
+    assert.strictEqual(res1.rewardGp, 1000);
+    assert.strictEqual(res1.newWallet.growthPoints, 1050);
+    assert.strictEqual(res1.newWallet.lifetimeGpEarned, 1050);
+    assert.deepStrictEqual(res1.newWallet.redeemedCodes, ['gpzoo']);
+    assert.strictEqual(res1.newLedger.length, 1);
+    assert.strictEqual(res1.newLedger[0].type, 'redeem_code');
+    assert.strictEqual(res1.newLedger[0].amount, 1000);
+
+    // Duplicate redemption rejected
+    const res2 = redeemPromoCode(res1.newWallet, 'gpzoo', res1.newLedger);
+    assert.strictEqual(res2.success, false);
+    assert.match(res2.error!, /already been redeemed/i);
+    assert.strictEqual(res2.newWallet.growthPoints, 1050); // unchanged
+
+    // Invalid code rejected
+    const res3 = redeemPromoCode(res1.newWallet, 'fakecode123', res1.newLedger);
+    assert.strictEqual(res3.success, false);
+    assert.match(res3.error!, /invalid redeem code/i);
+    assert.strictEqual(res3.newWallet.growthPoints, 1050); // unchanged
   });
 });
 

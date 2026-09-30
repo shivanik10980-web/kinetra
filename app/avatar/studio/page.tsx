@@ -45,6 +45,7 @@ import {
   Trophy,
   Award,
 } from 'lucide-react';
+import { RedeemCodeBox } from '@/components/avatar/RedeemCodeBox';
 
 export default function MuscleGrowthStudioPage() {
   const router = useRouter();
@@ -351,6 +352,13 @@ export default function MuscleGrowthStudioPage() {
               </p>
             </div>
           )}
+
+          {/* Quick Redeem Code Box */}
+          <RedeemCodeBox
+            wallet={wallet}
+            variant="compact"
+            onRedeemed={(updated) => setWallet(updated)}
+          />
         </div>
 
         {/* Right Column: Muscle Regions Allocator & Ledger */}

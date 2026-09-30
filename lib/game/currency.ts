@@ -574,3 +574,90 @@ export function awakenLineage(
     newAvatar,
   };
 }
+
+/**
+ * Registry of valid promotional/redeem codes.
+ */
+export const PROMO_CODES: Record<string, { gpReward: number; description: string }> = {
+  gpzoo: {
+    gpReward: 1000,
+    description: 'Special ZooGrow Bonus (+1,000 GP)',
+  },
+};
+
+/**
+ * Redeem a promotional code to receive spendable Growth Points (GP).
+ * Idempotent: Prevents redeeming the exact same code twice on the same account.
+ */
+export function redeemPromoCode(
+  wallet: WalletState,
+  code: string,
+  ledger: TransactionRecord[] = []
+): {
+  success: boolean;
+  newWallet: WalletState;
+  newLedger: TransactionRecord[];
+  rewardGp: number;
+  error?: string;
+} {
+  const normalized = (code || '').trim().toLowerCase();
+  if (!normalized) {
+    return {
+      success: false,
+      newWallet: wallet,
+      newLedger: ledger,
+      rewardGp: 0,
+      error: 'Please enter a redeem code.',
+    };
+  }
+
+  const promo = PROMO_CODES[normalized];
+  if (!promo) {
+    return {
+      success: false,
+      newWallet: wallet,
+      newLedger: ledger,
+      rewardGp: 0,
+      error: 'Invalid redeem code. Please check and try again.',
+    };
+  }
+
+  const redeemed = wallet.redeemedCodes || [];
+  if (redeemed.includes(normalized)) {
+    return {
+      success: false,
+      newWallet: wallet,
+      newLedger: ledger,
+      rewardGp: 0,
+      error: `Code "${normalized}" has already been redeemed on this account.`,
+    };
+  }
+
+  const newBalance = (wallet.growthPoints || 0) + promo.gpReward;
+  const newLifetimeGp = (wallet.lifetimeGpEarned || 0) + promo.gpReward;
+
+  const newWallet: WalletState = {
+    ...wallet,
+    growthPoints: newBalance,
+    lifetimeGpEarned: newLifetimeGp,
+    redeemedCodes: [...redeemed, normalized],
+  };
+
+  const newTx: TransactionRecord = {
+    id: `tx_redeem_${normalized}_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    type: 'redeem_code',
+    amount: promo.gpReward,
+    balanceAfter: newBalance,
+    referenceId: `redeem_${normalized}`,
+    description: `Redeemed promo code "${normalized}": ${promo.description}`,
+  };
+
+  return {
+    success: true,
+    newWallet,
+    newLedger: [newTx, ...ledger],
+    rewardGp: promo.gpReward,
+  };
+}
+

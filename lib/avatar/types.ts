@@ -89,12 +89,13 @@ export interface WalletState {
   migrationMarker: string | null; // e.g. 'gp_migration_v2_ten_groups'
   lastRewardedDate: string | null;
   inventory?: Record<string, number>; // booster itemId -> quantity
+  redeemedCodes?: string[]; // Promo codes redeemed by the user
 }
 
 export interface TransactionRecord {
   id: string;
   timestamp: string;
-  type: 'earn_reward' | 'spend_muscle' | 'balanced_upgrade' | 'migration' | 'booster_consumed';
+  type: 'earn_reward' | 'spend_muscle' | 'balanced_upgrade' | 'migration' | 'booster_consumed' | 'redeem_code';
   amount: number; // positive = credit, negative = debit
   balanceAfter: number;
   referenceId: string;
