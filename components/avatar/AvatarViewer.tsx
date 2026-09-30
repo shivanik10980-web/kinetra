@@ -9,12 +9,17 @@ import {
   DEFAULT_AVATAR_PROGRESSION,
 } from '@/lib/avatar/types';
 import {
+  buildStylizedCharacterRig,
+  updateMuscleMorphs,
+  animateCharacterRig,
+  CharacterRig,
+} from './character-builder';
+import {
   RotateCcw,
   RotateCw,
   ZoomIn,
   ZoomOut,
   RefreshCw,
-  Eye,
   Sparkles,
   AlertTriangle,
 } from 'lucide-react';
@@ -39,38 +44,38 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   const [webGLError, setWebGLError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [cameraZoomLevel, setCameraZoomLevel] = useState<number>(3.2);
+  const [cameraZoomLevel, setCameraZoomLevel] = useState<number>(3.3);
   const [rotationAngle, setRotationAngle] = useState<number>(0);
+  const [reducedMotion, setReducedMotion] = useState<boolean>(false);
 
   // References for Three.js scene graph
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const characterRootRef = useRef<THREE.Group | null>(null);
-  const chestMeshRef = useRef<THREE.Mesh | null>(null);
-  const armsMeshLeftRef = useRef<THREE.Mesh | null>(null);
-  const armsMeshRightRef = useRef<THREE.Mesh | null>(null);
-  const shouldersMeshLeftRef = useRef<THREE.Mesh | null>(null);
-  const shouldersMeshRightRef = useRef<THREE.Mesh | null>(null);
-  const coreMeshRef = useRef<THREE.Mesh | null>(null);
-  const backMeshRef = useRef<THREE.Mesh | null>(null);
-  const legsMeshLeftRef = useRef<THREE.Mesh | null>(null);
-  const legsMeshRightRef = useRef<THREE.Mesh | null>(null);
-  const headMeshRef = useRef<THREE.Mesh | null>(null);
-  const hairGroupRef = useRef<THREE.Group | null>(null);
-  const earsGroupRef = useRef<THREE.Group | null>(null);
-  const tailGroupRef = useRef<THREE.Group | null>(null);
-  const eyesGroupRef = useRef<THREE.Group | null>(null);
-  const clothingGroupRef = useRef<THREE.Group | null>(null);
+  const rigRef = useRef<CharacterRig | null>(null);
 
   // Interaction tracking
   const isDraggingRef = useRef(false);
   const previousMousePositionRef = useRef({ x: 0, y: 0 });
 
+  // Detect prefers-reduced-motion
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      setReducedMotion(mediaQuery.matches);
+      const listener = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    }
+  }, []);
+
+  const initViewer = () => {
     const container = mountRef.current;
     if (!container) return;
 
-    // Check WebGL availability
+    setIsLoading(true);
+    setWebGLError(null);
+
+    // 1. Check WebGL availability
     try {
       const testCanvas = document.createElement('canvas');
       const gl = testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl');
@@ -88,15 +93,15 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
     const width = container.clientWidth || 400;
     const height = container.clientHeight || 450;
 
-    // 1. Scene setup
+    // 2. Scene setup
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // 2. Camera setup
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-    camera.position.set(0, 1.1, cameraZoomLevel);
+    // 3. Camera setup: Framed appropriately for tall Werewolf and broad Tigerhuman extremes
+    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+    camera.position.set(0, 1.15, cameraZoomLevel);
 
-    // 3. WebGL Renderer
+    // 4. WebGL Renderer
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({
@@ -107,7 +112,7 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
+      renderer.toneMappingExposure = 1.15;
       container.appendChild(renderer.domElement);
       rendererRef.current = renderer;
     } catch (e: any) {
@@ -116,359 +121,80 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
       return;
     }
 
-    // 4. Lighting Rig (Manga Studio Aesthetic)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    // 5. Lighting Rig (Manga Studio Aesthetic)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(2, 4, 3);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    keyLight.position.set(2.5, 4, 3);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.6); // Cyan fill
+    const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.7); // Cyan fill
     fillLight.position.set(-3, 2, 2);
     scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0x818cf8, 1.4); // Violet rim light
+    const rimLight = new THREE.DirectionalLight(0x818cf8, 1.5); // Violet rim light
     rimLight.position.set(0, 3, -3);
     scene.add(rimLight);
 
-    // Floor shadow disc
-    const floorGeo = new THREE.CircleGeometry(0.85, 32);
+    // Ground shadow disc
+    const floorGeo = new THREE.CircleGeometry(0.95, 32);
     const floorMat = new THREE.MeshBasicMaterial({
       color: 0x090d16,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.5,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.01;
     scene.add(floor);
 
-    // 5. Build Humanoid Character Rig
-    const characterRoot = new THREE.Group();
-    characterRootRef.current = characterRoot;
-    scene.add(characterRoot);
+    // 6. Build Anatomical Character Rig
+    const isAwakened = progression.evolutionStage === 'awakened';
+    const species = isAwakened ? progression.lineage : 'human';
+    const rig = buildStylizedCharacterRig(scene, customization, progression);
+    rigRef.current = rig;
 
-    // Materials generator
-    const skinColor = new THREE.Color(customization.skinTone);
-    const hairColor = new THREE.Color(customization.hairColor);
-    const eyeColor = new THREE.Color(customization.eyeColor);
-    const outfitColor = new THREE.Color(customization.clothingColor);
-
-    const skinMat = new THREE.MeshStandardMaterial({
-      color: skinColor,
-      roughness: 0.6,
-      metalness: 0.05,
-    });
-
-    const outfitMat = new THREE.MeshStandardMaterial({
-      color: outfitColor,
-      roughness: 0.7,
-      metalness: 0.1,
-    });
-
-    const hairMat = new THREE.MeshStandardMaterial({
-      color: hairColor,
-      roughness: 0.5,
-    });
-
-    // 5a. Torso & Core
-    const coreGeo = new THREE.CylinderGeometry(0.2, 0.17, 0.4, 16);
-    const coreMesh = new THREE.Mesh(coreGeo, outfitMat);
-    coreMesh.position.y = 0.95;
-    characterRoot.add(coreMesh);
-    coreMeshRef.current = coreMesh;
-
-    // 5b. Chest & Back
-    const chestGeo = new THREE.BoxGeometry(0.44, 0.32, 0.26);
-    const chestMesh = new THREE.Mesh(chestGeo, outfitMat);
-    chestMesh.position.y = 1.25;
-    characterRoot.add(chestMesh);
-    chestMeshRef.current = chestMesh;
-
-    // Back muscle wings (Lats)
-    const backGeo = new THREE.BoxGeometry(0.48, 0.3, 0.1);
-    const backMesh = new THREE.Mesh(backGeo, outfitMat);
-    backMesh.position.set(0, 1.25, -0.09);
-    characterRoot.add(backMesh);
-    backMeshRef.current = backMesh;
-
-    // 5c. Shoulders (Deltoids)
-    const shoulderGeo = new THREE.SphereGeometry(0.12, 16, 16);
-    const leftShoulder = new THREE.Mesh(shoulderGeo, skinMat);
-    leftShoulder.position.set(-0.31, 1.34, 0);
-    characterRoot.add(leftShoulder);
-    shouldersMeshLeftRef.current = leftShoulder;
-
-    const rightShoulder = new THREE.Mesh(shoulderGeo, skinMat);
-    rightShoulder.position.set(0.31, 1.34, 0);
-    characterRoot.add(rightShoulder);
-    shouldersMeshRightRef.current = rightShoulder;
-
-    // 5d. Arms (Biceps & Forearms)
-    const armGeo = new THREE.CylinderGeometry(0.08, 0.07, 0.52, 16);
-    const leftArm = new THREE.Mesh(armGeo, skinMat);
-    leftArm.position.set(-0.33, 1.02, 0);
-    characterRoot.add(leftArm);
-    armsMeshLeftRef.current = leftArm;
-
-    const rightArm = new THREE.Mesh(armGeo, skinMat);
-    rightArm.position.set(0.33, 1.02, 0);
-    characterRoot.add(rightArm);
-    armsMeshRightRef.current = rightArm;
-
-    // Hands
-    const handGeo = new THREE.BoxGeometry(0.08, 0.11, 0.05);
-    const leftHand = new THREE.Mesh(handGeo, skinMat);
-    leftHand.position.set(-0.33, 0.7, 0);
-    characterRoot.add(leftHand);
-
-    const rightHand = new THREE.Mesh(handGeo, skinMat);
-    rightHand.position.set(0.33, 0.7, 0);
-    characterRoot.add(rightHand);
-
-    // 5e. Legs (Quadriceps & Calves)
-    const legGeo = new THREE.CylinderGeometry(0.1, 0.075, 0.75, 16);
-    const leftLeg = new THREE.Mesh(legGeo, outfitMat);
-    leftLeg.position.set(-0.13, 0.42, 0);
-    characterRoot.add(leftLeg);
-    legsMeshLeftRef.current = leftLeg;
-
-    const rightLeg = new THREE.Mesh(legGeo, outfitMat);
-    rightLeg.position.set(0.13, 0.42, 0);
-    characterRoot.add(rightLeg);
-    legsMeshRightRef.current = rightLeg;
-
-    // Boots / Feet
-    const footGeo = new THREE.BoxGeometry(0.11, 0.08, 0.22);
-    const bootMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
-    const leftFoot = new THREE.Mesh(footGeo, bootMat);
-    leftFoot.position.set(-0.13, 0.04, 0.04);
-    characterRoot.add(leftFoot);
-
-    const rightFoot = new THREE.Mesh(footGeo, bootMat);
-    rightFoot.position.set(0.13, 0.04, 0.04);
-    characterRoot.add(rightFoot);
-
-    // 5f. Head, Face & Hair
-    const neckGeo = new THREE.CylinderGeometry(0.08, 0.09, 0.12, 16);
-    const neckMesh = new THREE.Mesh(neckGeo, skinMat);
-    neckMesh.position.y = 1.45;
-    characterRoot.add(neckMesh);
-
-    const headGeo = new THREE.SphereGeometry(0.18, 20, 20);
-    const headMesh = new THREE.Mesh(headGeo, skinMat);
-    headMesh.position.y = 1.62;
-    characterRoot.add(headMesh);
-    headMeshRef.current = headMesh;
-
-    // Eyes
-    const eyesGroup = new THREE.Group();
-    eyesGroupRef.current = eyesGroup;
-    headMesh.add(eyesGroup);
-
-    const eyeGeo = new THREE.SphereGeometry(0.035, 12, 12);
-    const eyeMat = new THREE.MeshStandardMaterial({
-      color: eyeColor,
-      emissive: progression.evolutionStage === 'awakened' ? eyeColor : new THREE.Color(0x000000),
-      emissiveIntensity: progression.evolutionStage === 'awakened' ? 0.6 : 0,
-      roughness: 0.2,
-    });
-
-    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-    leftEye.position.set(-0.065, 0.02, 0.15);
-    eyesGroup.add(leftEye);
-
-    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-    rightEye.position.set(0.065, 0.02, 0.15);
-    eyesGroup.add(rightEye);
-
-    // Hair Group
-    const hairGroup = new THREE.Group();
-    hairGroupRef.current = hairGroup;
-    headMesh.add(hairGroup);
-
-    const hairCapGeo = new THREE.SphereGeometry(0.19, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-    const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
-    hairCap.position.y = 0.02;
-    hairGroup.add(hairCap);
-
-    // Hairstyle Spikes / Flow
-    if (customization.hairstyle === 'wild' || customization.hairstyle === 'flowing') {
-      for (let i = 0; i < 7; i++) {
-        const spikeGeo = new THREE.ConeGeometry(0.06, 0.22, 6);
-        const spike = new THREE.Mesh(spikeGeo, hairMat);
-        const angle = (i / 7) * Math.PI - Math.PI / 2;
-        spike.position.set(Math.sin(angle) * 0.14, 0.12, Math.cos(angle) * 0.1);
-        spike.rotation.z = -angle * 0.6;
-        spike.rotation.x = -0.2;
-        hairGroup.add(spike);
-      }
-    } else if (customization.hairstyle === 'ponytail') {
-      const tailGeo = new THREE.CylinderGeometry(0.04, 0.02, 0.35, 8);
-      const ponyTail = new THREE.Mesh(tailGeo, hairMat);
-      ponyTail.position.set(0, 0.05, -0.22);
-      ponyTail.rotation.x = -0.6;
-      hairGroup.add(ponyTail);
-    }
-
-    // Lineage Mutation Features (Ears, Claws, Tail)
-    const earsGroup = new THREE.Group();
-    earsGroupRef.current = earsGroup;
-    headMesh.add(earsGroup);
-
-    const tailGroup = new THREE.Group();
-    tailGroupRef.current = tailGroup;
-    characterRoot.add(tailGroup);
-    tailGroup.position.set(0, 0.85, -0.15);
-
-    // Lineage Visual Traits Setup
-    if (progression.evolutionStage === 'awakened') {
-      if (progression.lineage === 'werewolf') {
-        // Pointed Lupine Ears
-        const wolfEarGeo = new THREE.ConeGeometry(0.07, 0.22, 6);
-        const wolfEarMat = new THREE.MeshStandardMaterial({
-          color: 0x334155,
-          roughness: 0.8,
-        });
-        const leftWolfEar = new THREE.Mesh(wolfEarGeo, wolfEarMat);
-        leftWolfEar.position.set(-0.12, 0.18, -0.02);
-        leftWolfEar.rotation.z = 0.25;
-        leftWolfEar.rotation.x = -0.1;
-        earsGroup.add(leftWolfEar);
-
-        const rightWolfEar = new THREE.Mesh(wolfEarGeo, wolfEarMat);
-        rightWolfEar.position.set(0.12, 0.18, -0.02);
-        rightWolfEar.rotation.z = -0.25;
-        rightWolfEar.rotation.x = -0.1;
-        earsGroup.add(rightWolfEar);
-
-        // Werewolf Muzzle
-        const muzzleGeo = new THREE.ConeGeometry(0.08, 0.16, 8);
-        const muzzle = new THREE.Mesh(muzzleGeo, skinMat);
-        muzzle.position.set(0, -0.06, 0.18);
-        muzzle.rotation.x = Math.PI / 2;
-        headMesh.add(muzzle);
-      } else if (progression.lineage === 'tigerhuman') {
-        // Rounded Feline Ears
-        const catEarGeo = new THREE.ConeGeometry(0.08, 0.15, 8);
-        const catEarMat = new THREE.MeshStandardMaterial({
-          color: 0xf59e0b,
-          roughness: 0.7,
-        });
-        const leftCatEar = new THREE.Mesh(catEarGeo, catEarMat);
-        leftCatEar.position.set(-0.12, 0.16, 0);
-        leftCatEar.rotation.z = 0.3;
-        earsGroup.add(leftCatEar);
-
-        const rightCatEar = new THREE.Mesh(catEarGeo, catEarMat);
-        rightCatEar.position.set(0.12, 0.16, 0);
-        rightCatEar.rotation.z = -0.3;
-        earsGroup.add(rightCatEar);
-
-        // Agile Balance Tail
-        const tailGeo = new THREE.CylinderGeometry(0.035, 0.02, 0.65, 8);
-        const tailMat = new THREE.MeshStandardMaterial({
-          color: 0xf59e0b,
-          roughness: 0.6,
-        });
-        const tailMesh = new THREE.Mesh(tailGeo, tailMat);
-        tailMesh.position.set(0, -0.2, -0.25);
-        tailMesh.rotation.x = -0.9;
-        tailGroup.add(tailMesh);
-      }
-    }
-
-    // Apply Base Proportions & Muscle Morphing
-    const applyMorphs = () => {
-      if (!characterRootRef.current) return;
-
-      // Base proportions
-      const hScale = customization.heightScale || 1.0;
-      const sScale = customization.shoulderWidthScale || 1.0;
-      characterRoot.scale.set(sScale, hScale, 1.0);
-
-      // Muscle allocation (0 - 10 per region)
-      const muscles = progression.muscleAllocation;
-      const cLvl = muscles.chest || 0;
-      const bLvl = muscles.back || 0;
-      const aLvl = muscles.arms || 0;
-      const sLvl = muscles.shoulders || 0;
-      const coreLvl = muscles.core || 0;
-      const lLvl = muscles.legs || 0;
-
-      // Chest morphing (depth & width scale: 1.0 to 1.45)
-      if (chestMeshRef.current) {
-        chestMeshRef.current.scale.set(1 + cLvl * 0.038, 1 + cLvl * 0.02, 1 + cLvl * 0.045);
-      }
-      // Back lats morphing (width: 1.0 to 1.5)
-      if (backMeshRef.current) {
-        backMeshRef.current.scale.set(1 + bLvl * 0.05, 1 + bLvl * 0.025, 1 + bLvl * 0.03);
-      }
-      // Shoulders deltoids morphing (radial volume: 1.0 to 1.6)
-      if (shouldersMeshLeftRef.current && shouldersMeshRightRef.current) {
-        const sVolume = 1 + sLvl * 0.055;
-        shouldersMeshLeftRef.current.scale.set(sVolume, sVolume, sVolume);
-        shouldersMeshRightRef.current.scale.set(sVolume, sVolume, sVolume);
-      }
-      // Arms biceps & triceps morphing (thickness: 1.0 to 1.5)
-      if (armsMeshLeftRef.current && armsMeshRightRef.current) {
-        const aThickness = 1 + aLvl * 0.045;
-        armsMeshLeftRef.current.scale.set(aThickness, 1.0, aThickness);
-        armsMeshRightRef.current.scale.set(aThickness, 1.0, aThickness);
-      }
-      // Core abdomen morphing (width & definition: 1.0 to 1.35)
-      if (coreMeshRef.current) {
-        coreMeshRef.current.scale.set(1 + coreLvl * 0.03, 1.0, 1 + coreLvl * 0.028);
-      }
-      // Legs quadriceps morphing (thickness: 1.0 to 1.5)
-      if (legsMeshLeftRef.current && legsMeshRightRef.current) {
-        const lThickness = 1 + lLvl * 0.048;
-        legsMeshLeftRef.current.scale.set(lThickness, 1.0, lThickness);
-        legsMeshRightRef.current.scale.set(lThickness, 1.0, lThickness);
-      }
-    };
-
-    applyMorphs();
+    // Apply muscle development morphs
+    updateMuscleMorphs(rig, progression.muscleAllocation, isAwakened, species);
     setIsLoading(false);
 
-    // 6. Animation Loop (Idle Breathing & Natural Sway)
+    // 7. Animation Loop using performance.now() to avoid THREE.Clock deprecation warnings
     let animationFrameId: number;
-    let clock = new THREE.Clock();
+    let startTime = performance.now();
+    let isHidden = false;
 
-    const animate = () => {
+    const handleVisibilityChange = () => {
+      isHidden = document.hidden;
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const animate = (currentTime: number) => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const elapsedTime = clock.getElapsedTime();
+      // Pause rendering when document is hidden (energy & performance optimization)
+      if (isHidden) return;
 
-      // Idle breathing expansion on chest
-      if (chestMeshRef.current) {
-        const breath = Math.sin(elapsedTime * 2.2) * 0.02;
-        chestMeshRef.current.position.y = 1.25 + breath * 0.5;
-      }
+      const elapsedTime = (currentTime - startTime) * 0.001;
 
-      // Subtle torso sway
-      if (characterRootRef.current) {
-        if (autoRotate) {
-          characterRootRef.current.rotation.y += 0.008;
-        } else {
-          characterRootRef.current.rotation.y = rotationAngle;
-        }
-      }
-
-      // Tail swish animation for Tigerhuman
-      if (tailGroupRef.current && progression.lineage === 'tigerhuman') {
-        tailGroupRef.current.rotation.y = Math.sin(elapsedTime * 3) * 0.25;
-        tailGroupRef.current.rotation.z = Math.cos(elapsedTime * 2) * 0.15;
+      if (rigRef.current) {
+        animateCharacterRig(
+          rigRef.current,
+          elapsedTime,
+          species,
+          autoRotate,
+          rotationAngle,
+          reducedMotion
+        );
       }
 
       camera.position.z = cameraZoomLevel;
       renderer.render(scene, camera);
     };
 
-    animate();
+    animationFrameId = requestAnimationFrame(animate);
 
-    // 7. Resize Observer
+    // 8. Resize Observer
     const handleResize = () => {
       if (!container || !rendererRef.current) return;
       const newW = container.clientWidth || 400;
@@ -480,12 +206,12 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
 
     window.addEventListener('resize', handleResize);
 
-    // 8. Cleanup & GPU Resource Disposal
+    // 9. Cleanup & GPU Disposal
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
 
-      // Dispose geometries and materials
       scene.traverse((obj) => {
         if ((obj as THREE.Mesh).isMesh) {
           const mesh = obj as THREE.Mesh;
@@ -507,9 +233,16 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
         }
       }
     };
-  }, [customization, progression, cameraZoomLevel, rotationAngle, autoRotate]);
+  };
 
-  // Touch and Mouse Orbit Controls Handlers
+  useEffect(() => {
+    const cleanup = initViewer();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [customization, progression, cameraZoomLevel, rotationAngle, autoRotate, reducedMotion]);
+
+  // Touch and Mouse Orbit Controls
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!interactive) return;
     isDraggingRef.current = true;
@@ -531,10 +264,10 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
   const rotateLeft = () => setRotationAngle((prev) => prev - Math.PI / 8);
   const rotateRight = () => setRotationAngle((prev) => prev + Math.PI / 8);
   const zoomIn = () => setCameraZoomLevel((prev) => Math.max(1.8, prev - 0.35));
-  const zoomOut = () => setCameraZoomLevel((prev) => Math.min(5.0, prev + 0.35));
+  const zoomOut = () => setCameraZoomLevel((prev) => Math.min(5.2, prev + 0.35));
   const resetView = () => {
     setRotationAngle(0);
-    setCameraZoomLevel(3.2);
+    setCameraZoomLevel(3.3);
   };
 
   return (
@@ -555,12 +288,12 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--surface-panel)]/80 backdrop-blur-xs z-10">
             <Sparkles className="w-8 h-8 text-[var(--cyan)] animate-spin mb-2" />
             <span className="text-xs font-black uppercase tracking-wider text-[var(--text-secondary)]">
-              Rendering Character Model...
+              Rendering Anatomical Model...
             </span>
           </div>
         )}
 
-        {/* WebGL Error / Fallback Card */}
+        {/* WebGL Error / Fallback Card with Retry */}
         {webGLError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-[var(--surface-panel)] z-20">
             <AlertTriangle className="w-10 h-10 text-amber-500 mb-3" />
@@ -568,10 +301,18 @@ export const AvatarViewer: React.FC<AvatarViewerProps> = ({
               3D Rendering Unavailable
             </h4>
             <p className="text-xs text-[var(--text-secondary)] max-w-xs mb-3">{webGLError}</p>
-            <div className="p-3 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs font-mono text-[var(--cyan-dim)]">
+            <div className="p-3 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs font-mono text-[var(--cyan-dim)] mb-4">
               Lineage: {progression.lineage.toUpperCase()} | Form:{' '}
               {progression.evolutionStage.toUpperCase()}
             </div>
+            <button
+              type="button"
+              onClick={initViewer}
+              className="touch-target px-4 py-2 border-2 border-[var(--border-color)] bg-[var(--paper)] text-xs font-black uppercase hover:bg-[var(--cyan)] flex items-center gap-2"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry WebGL</span>
+            </button>
           </div>
         )}
 

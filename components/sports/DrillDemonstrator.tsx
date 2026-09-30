@@ -290,16 +290,18 @@ export const DrillDemonstrator: React.FC<DrillDemonstratorProps> = ({
 
     // 7. Animation Loop with Linear Keyframe Interpolation (LERP)
     let animationFrameId: number;
-    let clock = new THREE.Clock();
+    let lastTime = performance.now();
 
-    const animate = () => {
+    const animate = (currentTime: number) => {
       animationFrameId = requestAnimationFrame(animate);
 
+      const deltaMs = currentTime - lastTime;
+      lastTime = currentTime;
+      const deltaSec = Math.min(deltaMs * 0.001, 0.1); // Clamp to prevent spikes
+
       if (isPlaying) {
-        const delta = clock.getDelta() * playbackSpeed;
+        const delta = deltaSec * playbackSpeed;
         animTimeRef.current += delta;
-      } else {
-        clock.getDelta(); // keep clock aligned
       }
 
       const totalDurationSec = config.cycleDurationMs / 1000;
@@ -391,7 +393,7 @@ export const DrillDemonstrator: React.FC<DrillDemonstratorProps> = ({
       renderer.render(scene, camera);
     };
 
-    animate();
+    animate(performance.now());
 
     const handleResize = () => {
       if (!container || !rendererRef.current) return;

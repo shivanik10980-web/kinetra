@@ -6,10 +6,13 @@ import { MangaCard } from '@/components/system/MangaCard';
 import { AvatarViewer } from '@/components/avatar/AvatarViewer';
 import { defaultStorage } from '@/lib/storage/indexeddb';
 import {
-  MUSCLE_REGIONS,
+  HUMAN_MUSCLE_REGIONS,
+  FANTASY_MUSCLE_REGIONS,
   WEREWOLF_LINEAGE,
   TIGERHUMAN_LINEAGE,
   GAME_ECONOMY,
+  COMBINATION_TITLES,
+  GAME_BOOSTERS,
 } from '@/lib/avatar/config';
 import {
   AvatarCustomization,
@@ -21,7 +24,11 @@ import {
 } from '@/lib/avatar/types';
 import { ProgressionState } from '@/lib/game/types';
 import { INITIAL_PROGRESSION_STATE } from '@/lib/game/progression';
-import { checkEvolutionEligibility } from '@/lib/game/currency';
+import {
+  checkEvolutionEligibility,
+  migrateToTenMuscleGroups,
+  checkTitleUnlocks,
+} from '@/lib/game/currency';
 import {
   Sparkles,
   Zap,
@@ -33,6 +40,8 @@ import {
   Trophy,
   Award,
   ArrowRight,
+  Package,
+  Check,
 } from 'lucide-react';
 
 export default function CharacterHomePage() {
@@ -52,16 +61,35 @@ export default function CharacterHomePage() {
       defaultStorage.getAvatar(),
       defaultStorage.getWallet(),
       defaultStorage.getProgression(),
-    ]).then(([avatarData, walletData, progData]) => {
-      if (avatarData?.customization) setCustomization(avatarData.customization);
-      if (avatarData?.progression) setAvatarProgression(avatarData.progression);
-      if (walletData) setWallet(walletData);
+    ]).then(async ([avatarData, walletData, progData]) => {
+      let curCustomization = avatarData?.customization || DEFAULT_AVATAR_CUSTOMIZATION;
+      let curProgression = avatarData?.progression || DEFAULT_AVATAR_PROGRESSION;
+      let curWallet = walletData || DEFAULT_WALLET_STATE;
+
+      // Migrate if needed
+      if (curWallet.migrationMarker !== GAME_ECONOMY.MIGRATION_MARKER_V2) {
+        const mig = migrateToTenMuscleGroups(curWallet, curProgression);
+        if (mig.migrated) {
+          curWallet = mig.wallet;
+          curProgression = mig.avatar;
+          await defaultStorage.saveWallet(curWallet);
+          await defaultStorage.saveAvatar({ customization: curCustomization, progression: curProgression });
+        }
+      }
+
+      setCustomization(curCustomization);
+      setAvatarProgression(curProgression);
+      setWallet(curWallet);
       if (progData) setGameProgression(progData);
     });
   }, []);
 
-  const evolutionCheck = checkEvolutionEligibility(avatarProgression.muscleAllocation);
   const isAwakened = avatarProgression.evolutionStage === 'awakened';
+  const evolutionCheck = checkEvolutionEligibility(
+    avatarProgression.muscleAllocation,
+    avatarProgression.evolutionStage
+  );
+
   const lineageConfig =
     avatarProgression.lineage === 'werewolf'
       ? WEREWOLF_LINEAGE
@@ -69,15 +97,39 @@ export default function CharacterHomePage() {
       ? TIGERHUMAN_LINEAGE
       : null;
 
+  const activeRegions = isAwakened ? FANTASY_MUSCLE_REGIONS : HUMAN_MUSCLE_REGIONS;
+  const maxLvl = isAwakened ? GAME_ECONOMY.FANTASY_MAX_LEVEL : GAME_ECONOMY.HUMAN_MAX_LEVEL;
+
+  // Handle Title Selection
+  const handleSelectTitle = async (titleId: string | null) => {
+    const updated: AvatarProgression = {
+      ...avatarProgression,
+      selectedTitle: titleId,
+    };
+    setAvatarProgression(updated);
+    await defaultStorage.saveAvatar({
+      customization,
+      progression: updated,
+    });
+  };
+
+  const unlockedTitles = avatarProgression.unlockedTitles || [];
+  const selectedTitleObj = COMBINATION_TITLES.find((t) => t.id === avatarProgression.selectedTitle);
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       {/* Character Profile Top Banner */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-3xl font-black uppercase tracking-tight">
               {customization.characterName}
             </h1>
+            {selectedTitleObj && (
+              <span className="px-2.5 py-0.5 text-xs font-black uppercase bg-amber-400 text-black border-2 border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)]">
+                « {selectedTitleObj.name} »
+              </span>
+            )}
             <span
               className={`px-3 py-1 text-xs font-black uppercase tracking-wider border-2 border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)] ${
                 isAwakened
@@ -147,55 +199,97 @@ export default function CharacterHomePage() {
             </div>
           </MangaCard>
 
-          {/* Recommended Practice Quick Card */}
-          <div className="manga-panel p-4 bg-[var(--surface-inset)] border-2 border-[var(--border-color)] flex items-center justify-between gap-4">
-            <div>
-              <div className="text-xs font-black uppercase text-[var(--cyan-dim)] flex items-center gap-1.5">
-                <Compass className="w-4 h-4" />
-                Recommended Movement Practice
+          {/* Earned Titles Showcase Card */}
+          <MangaCard title="Earned Titles & Accolades" badge={`${unlockedTitles.length} EARNED`}>
+            {unlockedTitles.length === 0 ? (
+              <p className="text-xs text-[var(--text-secondary)]">
+                Develop target muscle combinations in the Growth Studio to unlock permanent titles (e.g. Hunk, Athlete, Powerlifter, The Titan).
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[11px] text-[var(--text-secondary)] mb-2">
+                  Select which permanent title to display beside your character:
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {unlockedTitles.map((tId) => {
+                    const titleObj = COMBINATION_TITLES.find((t) => t.id === tId);
+                    if (!titleObj) return null;
+                    const isSelected = avatarProgression.selectedTitle === tId;
+                    return (
+                      <button
+                        key={tId}
+                        type="button"
+                        onClick={() => handleSelectTitle(isSelected ? null : tId)}
+                        className={`p-2.5 text-left border-2 text-xs flex items-center justify-between transition-all ${
+                          isSelected
+                            ? 'bg-amber-100 dark:bg-amber-950/40 border-amber-500 font-black'
+                            : 'bg-[var(--surface-panel)] border-[var(--border-color)] hover:border-amber-400'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-extrabold uppercase">{titleObj.name}</div>
+                          <div className="text-[10px] text-[var(--text-secondary)] line-clamp-1">
+                            {titleObj.description}
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-amber-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="font-extrabold text-sm mt-0.5">
-                5-Minute Mindful Squats or Seated Elbow Practice
-              </div>
-              <div className="text-[11px] text-[var(--text-secondary)]">
-                Earn +30 XP & +30 GP for practice, plus +10 for reflection.
-              </div>
+            )}
+          </MangaCard>
+
+          {/* Boosters Inventory Card */}
+          <div className="manga-panel p-4 bg-[var(--surface-inset)] border-2 border-[var(--border-color)]">
+            <div className="flex items-center gap-2 text-xs font-black uppercase text-[var(--text-secondary)] mb-2">
+              <Package className="w-4 h-4 text-[var(--cyan-dim)]" />
+              <span>Practice Boosters (Earned via Milestones)</span>
             </div>
-            <Link
-              href="/workout"
-              className="touch-target px-4 py-2 bg-[var(--cyan)] text-[var(--ink)] font-black uppercase text-xs border-2 border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)] whitespace-nowrap hover:translate-x-[-1px] hover:translate-y-[-1px]"
-            >
-              Practice
-            </Link>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.values(GAME_BOOSTERS).map((b) => {
+                const count = wallet.inventory?.[b.id] || 0;
+                return (
+                  <div key={b.id} className="p-2 bg-[var(--surface-panel)] border border-[var(--border-color)] text-center">
+                    <div className="text-[10px] font-black uppercase text-[var(--text-secondary)]">{b.name}</div>
+                    <div className="text-base font-black font-mono mt-0.5">{count}x</div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-[var(--text-secondary)] mt-2">
+              Focus tokens add up to +5 points to eligible mastery rewards within the 60 daily cap. Never sold for real currency.
+            </p>
           </div>
         </div>
 
         {/* Right Column: Growth Studio Entry, Evolution Status, Adventure */}
         <div className="lg:col-span-6 flex flex-col gap-5">
           {/* Growth Studio Hub Card */}
-          <MangaCard title="Physical RPG Development" badge="GROWTH STUDIO">
+          <MangaCard title="Physical RPG Development" badge={isAwakened ? '15 FANTASY GROUPS' : '10 HUMAN GROUPS'}>
             <div className="space-y-3">
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Allocate your spendable Growth Points (GP) into 6 distinct muscle groups.
+                Allocate your spendable Growth Points (GP) into {activeRegions.length} distinct muscle groups.
                 Progression is non-destructive and builds towards primal awakening.
               </p>
 
-              {/* 6 Region mini status bars */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-2">
-                {MUSCLE_REGIONS.map((region) => {
+              {/* Muscle Region mini status bars */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-2 max-h-64 overflow-y-auto pr-1">
+                {activeRegions.map((region) => {
                   const lvl = avatarProgression.muscleAllocation[region.id] || 0;
                   return (
                     <div
                       key={region.id}
                       className="p-2 bg-[var(--surface-panel)] border border-[var(--border-color)] text-center"
                     >
-                      <div className="text-[10px] font-black uppercase text-[var(--text-secondary)]">
-                        {region.id}
+                      <div className="text-[10px] font-black uppercase text-[var(--text-secondary)] truncate">
+                        {region.id.replace(/_/g, ' ')}
                       </div>
-                      <div className="text-base font-black font-mono mt-0.5">
+                      <div className="text-sm font-black font-mono mt-0.5">
                         Lv.{lvl}
                         <span className="text-[10px] text-[var(--text-secondary)]">
-                          /{GAME_ECONOMY.MAX_MUSCLE_LEVEL}
+                          /{maxLvl}
                         </span>
                       </div>
                     </div>
@@ -219,7 +313,7 @@ export default function CharacterHomePage() {
             {!isAwakened ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold">Evolution Readiness (All regions Lv.4)</span>
+                  <span className="font-extrabold">Evolution Readiness (All 10 regions Lv.3)</span>
                   <span className="font-black text-[var(--violet-dim)]">
                     {evolutionCheck.totalGpInvestedInThreshold} / {GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP} GP
                   </span>
@@ -235,8 +329,8 @@ export default function CharacterHomePage() {
                 </div>
 
                 <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                  Choose between the steadfast <strong>Werewolf</strong> or the agile{' '}
-                  <strong>Tigerhuman</strong> lineage once all 6 muscle regions reach Level 4.
+                  Choose between the elongated, sinewy <strong>Werewolf</strong> or the stocky, bulky{' '}
+                  <strong>Tigerhuman</strong> lineage once all 10 muscle regions reach Level 3.
                 </p>
 
                 <Link
@@ -263,6 +357,18 @@ export default function CharacterHomePage() {
                     Development Units: <strong>{avatarProgression.developmentUnitsTotal.toFixed(1)}</strong>
                   </div>
                 </div>
+
+                {/* Archived Forms Summary if Awakened */}
+                {avatarProgression.archivedForms && avatarProgression.archivedForms.length > 0 && (
+                  <div className="p-2 bg-[var(--surface-panel)] border border-[var(--border-color)] text-[11px]">
+                    <span className="font-extrabold text-[var(--text-primary)]">Archived Forms: </span>
+                    {avatarProgression.archivedForms.map((f, i) => (
+                      <span key={i} className="text-[var(--text-secondary)]">
+                        Human Pioneer ({f.developmentUnitsTotal} units)
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Mutation milestones */}
                 <div className="text-xs font-black uppercase text-[var(--text-secondary)]">

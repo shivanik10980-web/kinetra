@@ -1,8 +1,45 @@
-import { MuscleRegionId } from './config';
+export type HumanMuscleRegionId =
+  | 'neck'
+  | 'upper_back'
+  | 'lower_back'
+  | 'forearms'
+  | 'shoulders'
+  | 'upper_arms'
+  | 'chest'
+  | 'abs_core'
+  | 'thighs'
+  | 'calves';
 
-export type MuscleAllocation = Record<MuscleRegionId, number>;
+export type FantasyMuscleRegionId =
+  | 'neck'
+  | 'lats'
+  | 'traps'
+  | 'lower_back'
+  | 'forearms'
+  | 'front_side_shoulders'
+  | 'rear_delts'
+  | 'biceps'
+  | 'triceps'
+  | 'chest'
+  | 'abs_core'
+  | 'thighs'
+  | 'hips_glutes'
+  | 'calves'
+  | 'jaw';
 
-export type LineageId = 'human' | 'werewolf' | 'tigerhuman';
+export type LegacyMuscleRegionId =
+  | 'chest'
+  | 'back'
+  | 'arms'
+  | 'shoulders'
+  | 'core'
+  | 'legs';
+
+export type MuscleRegionId = HumanMuscleRegionId | FantasyMuscleRegionId | LegacyMuscleRegionId;
+
+export type MuscleAllocation = Record<string, number>;
+
+export type LineageId = 'human' | 'werewolf' | 'tigerhuman' | 'hawk' | 'bullman';
 
 export type FacePresetId = 'sharp' | 'round' | 'stoic' | 'fierce';
 
@@ -23,6 +60,14 @@ export interface AvatarCustomization {
   shoulderWidthScale: number; // 0.9 to 1.1
 }
 
+export interface ArchivedForm {
+  lineage: LineageId;
+  evolutionStage: 'human' | 'awakened';
+  archivedAt: string;
+  muscleAllocation: MuscleAllocation;
+  developmentUnitsTotal: number;
+}
+
 export interface AvatarProgression {
   lineage: LineageId;
   evolutionStage: 'human' | 'awakened';
@@ -31,6 +76,9 @@ export interface AvatarProgression {
   muscleAllocation: MuscleAllocation;
   developmentUnitsTotal: number;
   unlockedMutationTiers: number[];
+  archivedForms?: ArchivedForm[];
+  unlockedTitles?: string[];
+  selectedTitle?: string | null;
 }
 
 export interface WalletState {
@@ -38,14 +86,15 @@ export interface WalletState {
   lifetimeXp: number; // Permanent, never spent
   lifetimeGpEarned: number;
   totalGpSpent: number;
-  migrationMarker: string | null; // e.g. 'gp_migration_v1'
+  migrationMarker: string | null; // e.g. 'gp_migration_v2_ten_groups'
   lastRewardedDate: string | null;
+  inventory?: Record<string, number>; // booster itemId -> quantity
 }
 
 export interface TransactionRecord {
   id: string;
   timestamp: string;
-  type: 'earn_reward' | 'spend_muscle' | 'balanced_upgrade' | 'migration';
+  type: 'earn_reward' | 'spend_muscle' | 'balanced_upgrade' | 'migration' | 'booster_consumed';
   amount: number; // positive = credit, negative = debit
   balanceAfter: number;
   referenceId: string;
@@ -65,13 +114,39 @@ export const DEFAULT_AVATAR_CUSTOMIZATION: AvatarCustomization = {
   shoulderWidthScale: 1.0,
 };
 
-export const DEFAULT_MUSCLE_ALLOCATION: MuscleAllocation = {
-  chest: 0,
-  back: 0,
-  arms: 0,
+export const DEFAULT_HUMAN_MUSCLE_ALLOCATION: Record<HumanMuscleRegionId, number> = {
+  neck: 0,
+  upper_back: 0,
+  lower_back: 0,
+  forearms: 0,
   shoulders: 0,
-  core: 0,
-  legs: 0,
+  upper_arms: 0,
+  chest: 0,
+  abs_core: 0,
+  thighs: 0,
+  calves: 0,
+};
+
+export const DEFAULT_FANTASY_MUSCLE_ALLOCATION: Record<FantasyMuscleRegionId, number> = {
+  neck: 0,
+  lats: 0,
+  traps: 0,
+  lower_back: 0,
+  forearms: 0,
+  front_side_shoulders: 0,
+  rear_delts: 0,
+  biceps: 0,
+  triceps: 0,
+  chest: 0,
+  abs_core: 0,
+  thighs: 0,
+  hips_glutes: 0,
+  calves: 0,
+  jaw: 0,
+};
+
+export const DEFAULT_MUSCLE_ALLOCATION: MuscleAllocation = {
+  ...DEFAULT_HUMAN_MUSCLE_ALLOCATION,
 };
 
 export const DEFAULT_AVATAR_PROGRESSION: AvatarProgression = {
@@ -79,9 +154,12 @@ export const DEFAULT_AVATAR_PROGRESSION: AvatarProgression = {
   evolutionStage: 'human',
   hasAwakened: false,
   awakenedAt: null,
-  muscleAllocation: { ...DEFAULT_MUSCLE_ALLOCATION },
+  muscleAllocation: { ...DEFAULT_HUMAN_MUSCLE_ALLOCATION },
   developmentUnitsTotal: 0,
   unlockedMutationTiers: [],
+  archivedForms: [],
+  unlockedTitles: [],
+  selectedTitle: null,
 };
 
 export const DEFAULT_WALLET_STATE: WalletState = {
@@ -91,4 +169,9 @@ export const DEFAULT_WALLET_STATE: WalletState = {
   totalGpSpent: 0,
   migrationMarker: null,
   lastRewardedDate: null,
+  inventory: {
+    focus_token: 1,
+    training_insight: 1,
+    style_boost: 1,
+  },
 };

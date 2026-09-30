@@ -1,4 +1,5 @@
 import { MovementSource } from '../exercises/types';
+import { GAME_ECONOMY } from '../avatar/config';
 import {
   BadgeId,
   DailyLedger,
@@ -6,6 +7,7 @@ import {
   RANKS,
   RankTitle,
   StaticGateBoss,
+  RewardEventType,
 } from './types';
 
 export const INITIAL_PROGRESSION_STATE: ProgressionState = {
@@ -71,26 +73,45 @@ export function calculateRank(totalXp: number): {
 }
 
 /**
- * Daily XP formula: min(40, 30 * slotFlag + 10 * reflectionFlag)
+ * Daily XP formula with centralized configurable ruleset:
+ * - Daily participation: 30 XP
+ * - Reflection: 10 XP
+ * - Planned practice: 10 XP
+ * - Learning/mastery bonus: 5 XP
+ * - Optional booster contribution: max 5 XP
+ * - Shared daily maximum: 60 XP
  */
-export function calculateDailyCap(slotFlag: boolean, reflectionFlag: boolean): number {
-  const calculated = (slotFlag ? 30 : 0) + (reflectionFlag ? 10 : 0);
-  return Math.min(40, calculated);
+export function calculateDailyCap(
+  slotFlag: boolean,
+  reflectionFlag: boolean,
+  plannedPracticeFlag = false,
+  masteryBonusFlag = false,
+  boosterContribution = 0
+): number {
+  const calculated =
+    (slotFlag ? GAME_ECONOMY.DAILY_PARTICIPATION_REWARD : 0) +
+    (reflectionFlag ? GAME_ECONOMY.REFLECTION_REWARD : 0) +
+    (plannedPracticeFlag ? GAME_ECONOMY.PLANNED_PRACTICE_BONUS : 0) +
+    (masteryBonusFlag ? GAME_ECONOMY.MASTERY_BONUS : 0) +
+    Math.min(GAME_ECONOMY.BOOSTER_CONTRIBUTION_MAX, Math.max(0, boosterContribution));
+  return Math.min(GAME_ECONOMY.MAX_DAILY_XP, calculated);
 }
 
 /**
- * Applies a reward event to progression state with idempotency & strict daily cap
+ * Applies a reward event to progression state with idempotency & strict 60 daily cap.
+ * Supports continued logging even after currency cap has been reached.
  */
 export function applyReward(
   currentState: ProgressionState,
   event: {
     eventId: string;
-    type: 'slot' | 'reflection';
+    type: RewardEventType;
     source: MovementSource;
     dateKey: string; // YYYY-MM-DD
     details?: {
       movement?: string;
       hadPause?: boolean;
+      boosterAmount?: number;
     };
   }
 ): {
@@ -115,7 +136,11 @@ export function applyReward(
     dateKey: event.dateKey,
     slotFlag: false,
     reflectionFlag: false,
+    plannedPracticeFlag: false,
+    masteryBonusFlag: false,
+    boosterContribution: 0,
     xpEarned: 0,
+    gpEarned: 0,
     eventIds: [],
   };
 
@@ -133,15 +158,38 @@ export function applyReward(
   // Calculate new flags
   const newSlotFlag = event.type === 'slot' ? true : existingLedger.slotFlag;
   const newReflectionFlag = event.type === 'reflection' ? true : existingLedger.reflectionFlag;
+  const newPlannedFlag =
+    event.type === 'planned_practice' ? true : !!existingLedger.plannedPracticeFlag;
+  const newMasteryFlag =
+    event.type === 'mastery' ? true : !!existingLedger.masteryBonusFlag;
+  const newBoosterContrib =
+    event.type === 'booster'
+      ? Math.min(
+          GAME_ECONOMY.BOOSTER_CONTRIBUTION_MAX,
+          (existingLedger.boosterContribution || 0) + (event.details?.boosterAmount || 5)
+        )
+      : (existingLedger.boosterContribution || 0);
 
-  const targetDailyXp = calculateDailyCap(newSlotFlag, newReflectionFlag);
+  const targetDailyXp = calculateDailyCap(
+    newSlotFlag,
+    newReflectionFlag,
+    newPlannedFlag,
+    newMasteryFlag,
+    newBoosterContrib
+  );
+  
+  // Award only what remains under the shared cap
   const awardedXp = Math.max(0, targetDailyXp - existingLedger.xpEarned);
 
   const updatedLedger: DailyLedger = {
     ...existingLedger,
     slotFlag: newSlotFlag,
     reflectionFlag: newReflectionFlag,
+    plannedPracticeFlag: newPlannedFlag,
+    masteryBonusFlag: newMasteryFlag,
+    boosterContribution: newBoosterContrib,
     xpEarned: existingLedger.xpEarned + awardedXp,
+    gpEarned: (existingLedger.gpEarned || existingLedger.xpEarned) + awardedXp,
     eventIds: [...existingLedger.eventIds, event.eventId],
   };
 

@@ -212,7 +212,7 @@ export const DrillReviewModal: React.FC<DrillReviewModalProps> = ({ summary, onC
                 Sports Practice Logged & Saved
               </div>
               <div className="text-sm font-extrabold text-[var(--cyan-dim)] mt-1">
-                +{awardedXp} XP Awarded & +{awardedXp} GP Added to Wallet (Capped at 40 XP/day)
+                +{awardedXp} XP Awarded & +{awardedXp} GP Added to Wallet (Capped at 60 XP/day)
               </div>
             </div>
           )}

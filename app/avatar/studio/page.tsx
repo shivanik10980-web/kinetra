@@ -7,8 +7,10 @@ import { MangaCard } from '@/components/system/MangaCard';
 import { AvatarViewer } from '@/components/avatar/AvatarViewer';
 import { defaultStorage } from '@/lib/storage/indexeddb';
 import {
-  MUSCLE_REGIONS,
+  HUMAN_MUSCLE_REGIONS,
+  FANTASY_MUSCLE_REGIONS,
   GAME_ECONOMY,
+  COMBINATION_TITLES,
   MuscleRegionId,
 } from '@/lib/avatar/config';
 import {
@@ -19,12 +21,16 @@ import {
   DEFAULT_AVATAR_CUSTOMIZATION,
   DEFAULT_AVATAR_PROGRESSION,
   DEFAULT_WALLET_STATE,
+  DEFAULT_HUMAN_MUSCLE_ALLOCATION,
+  DEFAULT_FANTASY_MUSCLE_ALLOCATION,
 } from '@/lib/avatar/types';
 import {
   calculateRegionCost,
   calculateBalancedAllocation,
   checkEvolutionEligibility,
   spendGrowthPointsForMuscles,
+  migrateToTenMuscleGroups,
+  checkTitleUnlocks,
 } from '@/lib/game/currency';
 import {
   ArrowLeft,
@@ -36,12 +42,14 @@ import {
   AlertCircle,
   ShieldCheck,
   Compass,
+  Trophy,
+  Award,
 } from 'lucide-react';
 
 export default function MuscleGrowthStudioPage() {
   const router = useRouter();
 
-  // Saved state
+  // Saved persistent state
   const [customization, setCustomization] = useState<AvatarCustomization>(
     DEFAULT_AVATAR_CUSTOMIZATION
   );
@@ -50,60 +58,94 @@ export default function MuscleGrowthStudioPage() {
   );
   const [wallet, setWallet] = useState<WalletState>(DEFAULT_WALLET_STATE);
 
-  // Preview state (interactive working copy)
+  // Preview interactive working copy
   const [previewAllocation, setPreviewAllocation] = useState<MuscleAllocation>({
-    chest: 0,
-    back: 0,
-    arms: 0,
-    shoulders: 0,
-    core: 0,
-    legs: 0,
+    ...DEFAULT_HUMAN_MUSCLE_ALLOCATION,
   });
 
-  const [activeRegion, setActiveRegion] = useState<MuscleRegionId>('chest');
+  const [activeRegion, setActiveRegion] = useState<string>('chest');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
-  // Load from persistent local storage
+  const isAwakened = savedProgression.evolutionStage === 'awakened';
+  const activeRegionsList = isAwakened ? FANTASY_MUSCLE_REGIONS : HUMAN_MUSCLE_REGIONS;
+  const maxLevelForStage = isAwakened
+    ? GAME_ECONOMY.FANTASY_MAX_LEVEL
+    : GAME_ECONOMY.HUMAN_MAX_LEVEL;
+  const costPerLevel = isAwakened
+    ? GAME_ECONOMY.FANTASY_GP_PER_LEVEL
+    : GAME_ECONOMY.HUMAN_GP_PER_LEVEL;
+
+  // Load from persistent local storage & perform deterministic migration if needed
   useEffect(() => {
     Promise.all([
       defaultStorage.getAvatar(),
       defaultStorage.getWallet(),
-    ]).then(([avatarData, walletData]) => {
-      if (avatarData?.customization) setCustomization(avatarData.customization);
-      if (avatarData?.progression) {
-        setSavedProgression(avatarData.progression);
-        setPreviewAllocation({ ...avatarData.progression.muscleAllocation });
+    ]).then(async ([avatarData, walletData]) => {
+      let curCustomization = avatarData?.customization || DEFAULT_AVATAR_CUSTOMIZATION;
+      let curProgression = avatarData?.progression || DEFAULT_AVATAR_PROGRESSION;
+      let curWallet = walletData || DEFAULT_WALLET_STATE;
+
+      // Deterministic migration to 10 human groups if not yet migrated
+      if (curWallet.migrationMarker !== GAME_ECONOMY.MIGRATION_MARKER_V2) {
+        const mig = migrateToTenMuscleGroups(curWallet, curProgression);
+        if (mig.migrated) {
+          curWallet = mig.wallet;
+          curProgression = mig.avatar;
+          await defaultStorage.saveWallet(curWallet);
+          await defaultStorage.saveAvatar({ customization: curCustomization, progression: curProgression });
+          if (mig.transactions.length > 0) {
+            const txs = await defaultStorage.getTransactions();
+            await defaultStorage.saveTransactions([...mig.transactions, ...txs]);
+          }
+        }
       }
-      if (walletData) setWallet(walletData);
+
+      setCustomization(curCustomization);
+      setSavedProgression(curProgression);
+      setPreviewAllocation({ ...curProgression.muscleAllocation });
+      setWallet(curWallet);
     });
   }, []);
 
-  // Compute total cost between saved and preview allocation
+  // Compute total pending cost between saved and preview allocation
   let totalPendingCost = 0;
-  for (const r of MUSCLE_REGIONS) {
+  for (const r of activeRegionsList) {
     const savedLvl = savedProgression.muscleAllocation[r.id] || 0;
     const previewLvl = previewAllocation[r.id] || 0;
     if (previewLvl > savedLvl) {
-      totalPendingCost += (previewLvl - savedLvl) * GAME_ECONOMY.MUSCLE_COST_PER_LEVEL_HUMAN;
+      totalPendingCost += (previewLvl - savedLvl) * costPerLevel;
     }
   }
 
   const hasPendingChanges = totalPendingCost > 0;
   const canAfford = wallet.growthPoints >= totalPendingCost;
 
-  // Evolution eligibility analysis
-  const evolutionCheck = checkEvolutionEligibility(previewAllocation);
-  const savedEvolutionCheck = checkEvolutionEligibility(savedProgression.muscleAllocation);
+  // PRIORITY 3: STRICT SEPARATION OF SAVED READINESS VS PREVIEW READINESS
+  // Evolution eligibility must strictly use committed saved data only!
+  const savedEvolutionCheck = checkEvolutionEligibility(
+    savedProgression.muscleAllocation,
+    savedProgression.evolutionStage
+  );
+  // Projected readiness is only shown as a preview calculation
+  const previewEvolutionCheck = checkEvolutionEligibility(
+    previewAllocation,
+    savedProgression.evolutionStage
+  );
+
+  // Combination titles check
+  const currentEarnedTitles = checkTitleUnlocks(savedProgression.muscleAllocation, isAwakened);
+  const prospectiveTitles = checkTitleUnlocks(previewAllocation, isAwakened);
+  const newlyQualifyingTitles = prospectiveTitles.filter((t) => !currentEarnedTitles.includes(t));
 
   // Region adjustment handlers
-  const handleLevelChange = (regionId: MuscleRegionId, newLevel: number) => {
+  const handleLevelChange = (regionId: string, newLevel: number) => {
     setErrorMessage(null);
     setSuccessMessage(null);
     const savedLvl = savedProgression.muscleAllocation[regionId] || 0;
-    // Bounded between saved level and maximum 10
-    const clamped = Math.max(savedLvl, Math.min(GAME_ECONOMY.MAX_MUSCLE_LEVEL, newLevel));
+    // Bounded between saved level and maximum for the active stage
+    const clamped = Math.max(savedLvl, Math.min(maxLevelForStage, newLevel));
     setPreviewAllocation((prev) => ({
       ...prev,
       [regionId]: clamped,
@@ -115,15 +157,18 @@ export default function MuscleGrowthStudioPage() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // Find the next balanced uniform target level across all regions
-    const currentMin = Math.min(...MUSCLE_REGIONS.map((r) => previewAllocation[r.id] || 0));
-    const targetUniform = Math.min(GAME_ECONOMY.MAX_MUSCLE_LEVEL, currentMin + 1);
+    const currentMin = Math.min(...activeRegionsList.map((r) => previewAllocation[r.id] || 0));
+    const targetUniform = Math.min(maxLevelForStage, currentMin + 1);
 
-    const { newAllocation } = calculateBalancedAllocation(previewAllocation, targetUniform);
+    const { newAllocation } = calculateBalancedAllocation(
+      previewAllocation,
+      targetUniform,
+      isAwakened
+    );
     setPreviewAllocation(newAllocation);
   };
 
-  // Cancel preview and revert to saved state
+  // Cancel preview and discard unconfirmed changes
   const handleCancelPreview = () => {
     setPreviewAllocation({ ...savedProgression.muscleAllocation });
     setErrorMessage(null);
@@ -146,7 +191,7 @@ export default function MuscleGrowthStudioPage() {
         ledger,
         purchaseId,
         previewAllocation,
-        'Muscle Growth Studio Upgrade'
+        `${isAwakened ? 'Fantasy' : 'Human'} Muscle Growth Upgrade`
       );
 
       if (!res.success) {
@@ -155,7 +200,7 @@ export default function MuscleGrowthStudioPage() {
         return;
       }
 
-      // Persist atomic updates to IndexedDB
+      // Persist atomic updates
       await defaultStorage.saveWallet(res.newWallet);
       await defaultStorage.saveAvatar({
         customization,
@@ -167,7 +212,7 @@ export default function MuscleGrowthStudioPage() {
       setSavedProgression(res.newAvatar);
       setPreviewAllocation({ ...res.newAvatar.muscleAllocation });
       setSuccessMessage(
-        `Upgrades applied! Spent ${totalPendingCost} GP. Your avatar's physical development has increased.`
+        `Upgrades committed! Spent ${totalPendingCost} GP. Your character's physical development has increased.`
       );
     } catch (err: any) {
       setErrorMessage(`Transaction error: ${err?.message || 'Storage write failed'}`);
@@ -211,7 +256,10 @@ export default function MuscleGrowthStudioPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: 3D Live Muscle Deformation Viewer */}
         <div className="lg:col-span-6 flex flex-col gap-4">
-          <MangaCard title="Muscle Morphing Simulation" badge="LIVE 3D PREVIEW">
+          <MangaCard
+            title={isAwakened ? 'Fantasy Morphing Stage' : 'Human Morphing Stage'}
+            badge={isAwakened ? '15 FANTASY GROUPS' : '10 HUMAN GROUPS'}
+          >
             <AvatarViewer
               customization={customization}
               progression={livePreviewProgression}
@@ -221,64 +269,104 @@ export default function MuscleGrowthStudioPage() {
             {/* Growth Disclaimer */}
             <div className="p-3 bg-[var(--surface-panel)] border border-[var(--border-color)] text-[11px] text-[var(--text-secondary)] mt-3">
               <span className="font-extrabold text-[var(--text-primary)]">Fantasy Progression Note: </span>
-              Muscle growth represents stylized fantasy character development and posture mastery,
-              not the user’s real-world physique, body fat, or medical fitness.
+              Muscle development represents stylized fantasy RPG avatar aesthetics and posture mastery,
+              not the user’s real-world body composition, weight loss, or medical fitness.
             </div>
           </MangaCard>
 
-          {/* Evolution Threshold Progress Card */}
-          <div className="manga-panel p-4 bg-[var(--surface-panel)] border-2 border-[var(--border-color)]">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[var(--violet-dim)]" />
-                <h4 className="font-black text-xs uppercase tracking-wide">
-                  Primal Awakening Threshold
-                </h4>
+          {/* PRIORITY 3: Evolution Readiness Card (Saved vs Preview clearly separated) */}
+          {!isAwakened && (
+            <div className="manga-panel p-4 bg-[var(--surface-panel)] border-2 border-[var(--border-color)]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[var(--violet-dim)]" />
+                  <h4 className="font-black text-xs uppercase tracking-wide">
+                    Primal Awakening Threshold
+                  </h4>
+                </div>
+                {/* SAVED EARNED READINESS: Committed data only! */}
+                <span className="text-xs font-black text-[var(--violet-dim)]">
+                  {savedEvolutionCheck.totalGpInvestedInThreshold} / {GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP} GP (Saved)
+                </span>
               </div>
-              <span className="text-xs font-black text-[var(--violet-dim)]">
-                {evolutionCheck.totalGpInvestedInThreshold} / {GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP} GP
-              </span>
-            </div>
 
-            {/* Progress bar */}
-            <div className="w-full h-3 bg-[var(--surface-inset)] border border-[var(--border-color)] overflow-hidden">
-              <div
-                className="h-full bg-[var(--violet)] transition-all duration-300"
-                style={{
-                  width: `${(evolutionCheck.totalGpInvestedInThreshold / GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP) * 100}%`,
-                }}
-              />
-            </div>
-
-            <p className="text-[11px] text-[var(--text-secondary)] mt-2">
-              Requires all 6 muscle regions to reach Level 4. (Total 240 GP = 6 fully rewarded practice days).
-            </p>
-
-            {evolutionCheck.eligible && (
-              <div className="mt-3 p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-400 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center justify-between">
-                <span>⚡ Primal Evolution Gate Unlocked!</span>
-                <Link
-                  href="/avatar/evolution"
-                  className="px-2.5 py-1 bg-emerald-600 text-white font-black uppercase text-[10px] hover:bg-emerald-700"
-                >
-                  Awaken Lineage
-                </Link>
+              {/* Saved Progress Bar */}
+              <div className="w-full h-3 bg-[var(--surface-inset)] border border-[var(--border-color)] overflow-hidden relative">
+                <div
+                  className="h-full bg-[var(--violet)] transition-all duration-300"
+                  style={{
+                    width: `${(savedEvolutionCheck.totalGpInvestedInThreshold / GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP) * 100}%`,
+                  }}
+                />
+                {/* Secondary dashed indicator for uncommitted preview projection */}
+                {hasPendingChanges && previewEvolutionCheck.totalGpInvestedInThreshold > savedEvolutionCheck.totalGpInvestedInThreshold && (
+                  <div
+                    className="absolute top-0 bottom-0 bg-[var(--cyan)]/40 border-r-2 border-r-[var(--cyan)] transition-all duration-300"
+                    style={{
+                      left: `${(savedEvolutionCheck.totalGpInvestedInThreshold / GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP) * 100}%`,
+                      width: `${((previewEvolutionCheck.totalGpInvestedInThreshold - savedEvolutionCheck.totalGpInvestedInThreshold) / GAME_ECONOMY.EVOLUTION_UNLOCK_TOTAL_GP) * 100}%`,
+                    }}
+                  />
+                )}
               </div>
-            )}
-          </div>
+
+              {/* Explanatory notes */}
+              <div className="flex justify-between items-center text-[11px] text-[var(--text-secondary)] mt-2">
+                <span>Requires all 10 human muscle regions to reach Level 3 (240 GP).</span>
+                {hasPendingChanges && (
+                  <span className="font-bold text-[var(--cyan-dim)]">
+                    Projected Preview: {previewEvolutionCheck.totalGpInvestedInThreshold} GP
+                  </span>
+                )}
+              </div>
+
+              {/* Evolution gate link ONLY enabled if SAVED progress meets threshold */}
+              {savedEvolutionCheck.eligible ? (
+                <div className="mt-3 p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-400 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center justify-between">
+                  <span>⚡ Primal Evolution Gate Unlocked! (Committed)</span>
+                  <Link
+                    href="/avatar/evolution"
+                    className="px-2.5 py-1 bg-emerald-600 text-white font-black uppercase text-[10px] hover:bg-emerald-700"
+                  >
+                    Awaken Lineage
+                  </Link>
+                </div>
+              ) : hasPendingChanges && previewEvolutionCheck.eligible ? (
+                <div className="mt-3 p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-400 text-amber-800 dark:text-amber-200 text-xs font-bold">
+                  <span>Preview reaches threshold. Confirm and save upgrade to unlock Awakening.</span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Combination Titles Preview */}
+          {newlyQualifyingTitles.length > 0 && (
+            <div className="manga-panel p-3 bg-purple-50 dark:bg-purple-950/40 border-2 border-purple-400 text-xs">
+              <div className="font-black text-purple-900 dark:text-purple-200 uppercase flex items-center gap-1.5 mb-1">
+                <Trophy className="w-3.5 h-3.5" />
+                <span>Title Unlock in Preview:</span>
+              </div>
+              <p className="text-[11px] text-purple-800 dark:text-purple-300">
+                Confirming these upgrades will permanently unlock title: <strong>{newlyQualifyingTitles.join(', ').toUpperCase()}</strong>.
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Right Column: 6 Muscle Regions Controls & Shopping Ledger */}
+        {/* Right Column: Muscle Regions Allocator & Ledger */}
         <div className="lg:col-span-6 flex flex-col gap-4">
-          <MangaCard title="Growth Studio Allocator" badge="6 REGIONS">
+          <MangaCard
+            title={isAwakened ? 'Fantasy Growth Allocator' : 'Human Growth Allocator'}
+            badge={`${activeRegionsList.length} REGIONS`}
+          >
             {/* Quick Action: Balanced Allocation */}
-            <div className="flex items-center justify-between gap-3 mb-6 p-3 bg-[var(--surface-inset)] border border-[var(--border-color)]">
+            <div className="flex items-center justify-between gap-3 mb-4 p-3 bg-[var(--surface-inset)] border border-[var(--border-color)]">
               <div>
                 <div className="text-xs font-black uppercase text-[var(--text-primary)]">
                   Balanced Development
                 </div>
                 <div className="text-[11px] text-[var(--text-secondary)]">
-                  Distribute upgrades uniformly across all 6 regions.
+                  Distribute upgrades uniformly across all {activeRegionsList.length} active regions ({costPerLevel} GP/level).
                 </div>
               </div>
               <button
@@ -290,38 +378,48 @@ export default function MuscleGrowthStudioPage() {
               </button>
             </div>
 
-            {/* Region Sliders */}
-            <div className="space-y-4">
-              {MUSCLE_REGIONS.map((region) => {
+            {/* Region Sliders List */}
+            <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+              {activeRegionsList.map((region) => {
                 const savedLvl = savedProgression.muscleAllocation[region.id] || 0;
                 const previewLvl = previewAllocation[region.id] || 0;
-                const regionPendingCost = (previewLvl - savedLvl) * GAME_ECONOMY.MUSCLE_COST_PER_LEVEL_HUMAN;
+                const regionPendingCost = (previewLvl - savedLvl) * costPerLevel;
                 const isActive = activeRegion === region.id;
+                const reqThreshold = isAwakened ? 5 : GAME_ECONOMY.EVOLUTION_REQUIRED_HUMAN_LEVEL;
 
                 return (
                   <div
                     key={region.id}
                     onClick={() => setActiveRegion(region.id)}
-                    className={`p-3.5 border-2 transition-all cursor-pointer ${
+                    className={`p-3 border-2 transition-all cursor-pointer ${
                       isActive
                         ? 'border-[var(--cyan)] bg-[var(--surface-inset)] shadow-[2px_2px_0px_var(--cyan)]'
                         : 'border-[var(--border-color)] bg-[var(--surface-panel)] hover:border-[var(--text-secondary)]'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
-                        <span className="font-black text-sm uppercase tracking-wide">
-                          {region.id}
+                        <span className="font-black text-xs uppercase tracking-wide">
+                          {region.id.replace(/_/g, ' ')}
                         </span>
-                        {previewLvl >= GAME_ECONOMY.EVOLUTION_REQUIRED_REGION_LEVEL && (
-                          <span className="px-1.5 py-0.5 text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            Threshold Met (Lv.4+)
+                        {savedLvl >= reqThreshold ? (
+                          <span className="px-1.5 py-0.2 text-[8px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Threshold Met (Lv.{reqThreshold}+)
                           </span>
-                        )}
+                        ) : previewLvl >= reqThreshold ? (
+                          <span className="px-1.5 py-0.2 text-[8px] font-black uppercase bg-cyan-100 text-cyan-800 border border-cyan-300">
+                            Preview Lv.{reqThreshold}+
+                          </span>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono font-extrabold">
-                          Lv.{previewLvl} / {GAME_ECONOMY.MAX_MUSCLE_LEVEL}
+                          {previewLvl !== savedLvl && (
+                            <span className="text-[var(--text-secondary)] line-through mr-1">
+                              Lv.{savedLvl}
+                            </span>
+                          )}
+                          Lv.{previewLvl} / {maxLevelForStage}
                         </span>
                         {regionPendingCost > 0 && (
                           <span className="text-xs font-black text-[var(--cyan-dim)]">
@@ -332,16 +430,16 @@ export default function MuscleGrowthStudioPage() {
                     </div>
 
                     {/* Stepper + Range slider */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                       <button
                         type="button"
-                        aria-label={`Decrease ${region.id} muscle level`}
+                        aria-label={`Decrease ${region.id} level`}
                         disabled={previewLvl <= savedLvl}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleLevelChange(region.id, previewLvl - 1);
                         }}
-                        className="touch-target w-8 h-8 border-2 border-[var(--border-color)] bg-[var(--paper)] font-black text-sm flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-inset)]"
+                        className="touch-target w-7 h-7 border-2 border-[var(--border-color)] bg-[var(--paper)] font-black text-sm flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-inset)]"
                       >
                         -
                       </button>
@@ -349,24 +447,24 @@ export default function MuscleGrowthStudioPage() {
                       <input
                         type="range"
                         min={savedLvl}
-                        max={GAME_ECONOMY.MAX_MUSCLE_LEVEL}
+                        max={maxLevelForStage}
                         value={previewLvl}
                         onChange={(e) =>
                           handleLevelChange(region.id, parseInt(e.target.value, 10))
                         }
                         className="flex-1 accent-[var(--cyan)] cursor-pointer"
-                        aria-label={`${region.id} muscle level slider`}
+                        aria-label={`${region.id} muscle slider`}
                       />
 
                       <button
                         type="button"
-                        aria-label={`Increase ${region.id} muscle level`}
-                        disabled={previewLvl >= GAME_ECONOMY.MAX_MUSCLE_LEVEL}
+                        aria-label={`Increase ${region.id} level`}
+                        disabled={previewLvl >= maxLevelForStage}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleLevelChange(region.id, previewLvl + 1);
                         }}
-                        className="touch-target w-8 h-8 border-2 border-[var(--border-color)] bg-[var(--paper)] font-black text-sm flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-inset)]"
+                        className="touch-target w-7 h-7 border-2 border-[var(--border-color)] bg-[var(--paper)] font-black text-sm flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--surface-inset)]"
                       >
                         +
                       </button>
@@ -392,7 +490,7 @@ export default function MuscleGrowthStudioPage() {
             )}
 
             {/* Purchase Confirmation Bar */}
-            <div className="mt-6 pt-4 border-t-2 border-[var(--border-color)] flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-5 pt-4 border-t-2 border-[var(--border-color)] flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-extrabold uppercase text-[var(--text-secondary)]">
                   Pending Upgrade Cost
@@ -420,7 +518,7 @@ export default function MuscleGrowthStudioPage() {
                     onClick={handleCancelPreview}
                     className="touch-target px-4 py-2 border-2 border-[var(--border-color)] bg-[var(--surface-panel)] text-xs font-bold uppercase hover:bg-[var(--paper)]"
                   >
-                    Cancel
+                    Cancel Preview
                   </button>
                 )}
 
@@ -439,7 +537,7 @@ export default function MuscleGrowthStudioPage() {
             {/* Need More GP Prompt */}
             {!canAfford && totalPendingCost > 0 && (
               <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center justify-between">
-                <span>Practice daily movement or rest reflection to earn up to 40 GP/day.</span>
+                <span>Practice daily movement or rest reflection to earn up to 60 GP/day.</span>
                 <Link
                   href="/workout"
                   className="px-2.5 py-1 bg-amber-500 text-black font-black uppercase text-[10px] hover:bg-amber-600"

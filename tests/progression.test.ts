@@ -9,18 +9,22 @@ import {
 } from '../lib/game/progression';
 
 describe('Game Progression & Reward System Tests', () => {
-  test('Daily cap formula: min(40, 30*slot + 10*reflection)', () => {
+  test('Daily cap formula: min(60, 30*slot + 10*reflection + 10*planned + 5*mastery + booster)', () => {
     assert.equal(calculateDailyCap(false, false), 0);
     assert.equal(calculateDailyCap(true, false), 30);
     assert.equal(calculateDailyCap(false, true), 10);
     assert.equal(calculateDailyCap(true, true), 40);
+    assert.equal(calculateDailyCap(true, true, true), 50); // +10 planned practice
+    assert.equal(calculateDailyCap(true, true, true, true), 55); // +5 mastery bonus
+    assert.equal(calculateDailyCap(true, true, true, true, 5), 60); // +5 booster contribution = 60 cap
+    assert.equal(calculateDailyCap(true, true, true, true, 10), 60); // Clamped at 60
   });
 
-  test('Enforces strict daily cap of 40 XP and idempotency on duplicate eventId', () => {
+  test('Enforces strict daily cap of 60 XP, multi-reward bonuses, and continued logging', () => {
     let state = { ...INITIAL_PROGRESSION_STATE };
     const dateKey = '2026-09-30';
 
-    // 1. Complete slot (+30 XP)
+    // 1. Complete daily participation slot (+30 XP)
     const res1 = applyReward(state, {
       eventId: 'evt_slot_1',
       type: 'slot',
@@ -43,17 +47,7 @@ describe('Game Progression & Reward System Tests', () => {
     assert.equal(resDuplicate.isDuplicate, true);
     assert.equal(resDuplicate.newState.totalXp, 30);
 
-    // 3. User attempts another slot on same day -> daily slot already completed, 0 XP
-    const resSlot2 = applyReward(state, {
-      eventId: 'evt_slot_2',
-      type: 'slot',
-      source: 'live',
-      dateKey,
-    });
-    assert.equal(resSlot2.awardedXp, 0);
-    assert.equal(resSlot2.newState.totalXp, 30);
-
-    // 4. User does reflection (+10 XP)
+    // 3. User does reflection (+10 XP)
     const resReflect = applyReward(state, {
       eventId: 'evt_reflection_1',
       type: 'reflection',
@@ -62,16 +56,57 @@ describe('Game Progression & Reward System Tests', () => {
     });
     assert.equal(resReflect.awardedXp, 10);
     state = resReflect.newState;
-    assert.equal(state.totalXp, 40); // Cap of 40 reached for the day
+    assert.equal(state.totalXp, 40);
 
-    // 5. Any further events on the same day award 0 XP
-    const resOverflow = applyReward(state, {
-      eventId: 'evt_reflection_2',
-      type: 'reflection',
-      source: 'guided',
+    // 4. User completes a planned practice block (+10 XP)
+    const resPlanned = applyReward(state, {
+      eventId: 'evt_planned_1',
+      type: 'planned_practice',
+      source: 'live',
       dateKey,
     });
-    assert.equal(resOverflow.awardedXp, 0);
+    assert.equal(resPlanned.awardedXp, 10);
+    state = resPlanned.newState;
+    assert.equal(state.totalXp, 50);
+
+    // 5. User earns exercise mastery milestone bonus (+5 XP)
+    const resMastery = applyReward(state, {
+      eventId: 'evt_mastery_1',
+      type: 'mastery',
+      source: 'live',
+      dateKey,
+    });
+    assert.equal(resMastery.awardedXp, 5);
+    state = resMastery.newState;
+    assert.equal(state.totalXp, 55);
+
+    // 6. User applies a Focus Token booster contribution (+5 XP)
+    const resBooster = applyReward(state, {
+      eventId: 'evt_booster_1',
+      type: 'booster',
+      source: 'live',
+      dateKey,
+      details: { boosterAmount: 5 },
+    });
+    assert.equal(resBooster.awardedXp, 5);
+    state = resBooster.newState;
+    assert.equal(state.totalXp, 60); // Cap of 60 reached for the day!
+
+    // 7. Continued logging after cap: session is logged into ledger, but 0 further XP awarded
+    const resContinuedLogging = applyReward(state, {
+      eventId: 'evt_extra_session_1',
+      type: 'slot',
+      source: 'live',
+      dateKey,
+    });
+    assert.equal(resContinuedLogging.awardedXp, 0);
+    assert.equal(resContinuedLogging.newState.totalXp, 60);
+    // Verified event was logged in eventIds
+    assert.ok(
+      resContinuedLogging.newState.dailyLedgers[dateKey].eventIds.includes(
+        'evt_extra_session_1'
+      )
+    );
   });
 
   test('Guided mode and rest alternatives have equal participation XP parity (30 XP)', () => {

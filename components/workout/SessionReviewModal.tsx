@@ -173,7 +173,7 @@ export const SessionReviewModal: React.FC<SessionReviewModalProps> = ({ summary,
 
           {summary.source === 'guided' && (
             <div className="p-3 mb-4 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
-              {summary.evidenceSummary || 'Accessible guided session. Equal 30 XP awarded; no artificial pose score generated.'}
+              {summary.evidenceSummary || 'Accessible guided session. Equal 30 XP eligible to claim; no artificial pose score generated.'}
             </div>
           )}
 
@@ -236,7 +236,7 @@ export const SessionReviewModal: React.FC<SessionReviewModalProps> = ({ summary,
                 Session Saved to Local Ledger
               </div>
               <div className="text-sm font-extrabold text-[var(--cyan-dim)] mt-1">
-                +{awardedXp} XP Awarded & +{awardedXp} GP Added to Wallet (Capped at 40 XP/day)
+                +{awardedXp} XP Awarded & +{awardedXp} GP Added to Wallet (Capped at 60 XP/day)
               </div>
             </div>
           )}

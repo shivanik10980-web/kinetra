@@ -113,13 +113,13 @@ export default function DashboardPage() {
             <Zap className="w-4 h-4 text-[var(--cyan-dim)]" />
           </div>
           <div className="text-3xl font-black tabular-nums">
-            {todayXp} <span className="text-base text-[var(--text-secondary)] font-bold">/ 40 XP</span>
+            {todayXp} <span className="text-base text-[var(--text-secondary)] font-bold">/ 60 XP</span>
           </div>
           {/* Progress Bar */}
           <div className="w-full bg-[var(--surface-inset)] h-2.5 border border-[var(--border-color)] mt-3">
             <div
               className="bg-[var(--cyan)] h-full transition-all duration-300"
-              style={{ width: `${Math.min(100, (todayXp / 40) * 100)}%` }}
+              style={{ width: `${Math.min(100, (todayXp / 60) * 100)}%` }}
             />
           </div>
         </MangaCard>

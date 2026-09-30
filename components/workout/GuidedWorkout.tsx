@@ -128,7 +128,7 @@ export const GuidedWorkout: React.FC<GuidedWorkoutProps> = ({
       <MangaCard title={t(definition.nameKey as any)} badge="Accessible Guided Mode">
         {/* Honest Mode Explanation */}
         <div className="p-3 mb-4 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] flex items-center justify-between">
-          <span>Camera not active. Equal participation XP awarded upon completion.</span>
+          <span>Camera not active. Equal participation XP can be earned upon completion.</span>
           <span className="font-mono text-[10px] uppercase font-bold text-[var(--cyan-dim)]">
             State: {sessionState}
           </span>

@@ -82,7 +82,7 @@ export default function WelcomePage() {
             Three Ways to Practice Daily
           </h2>
           <p className="text-xs text-[var(--text-secondary)]">
-            All paths award identical 30 XP & 30 GP per session, capped at 40 XP/day with reflection.
+            All paths award identical 30 XP & 30 GP per session, with a shared daily maximum of 60 XP and 60 GP (including reflection, planned practice, and mastery bonuses).
           </p>
         </div>
 

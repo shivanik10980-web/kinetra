@@ -138,7 +138,7 @@ export default function QuestsPage() {
               Today&apos;s XP Earned
             </div>
             <div className="text-3xl font-black tabular-nums text-[var(--cyan-dim)]">
-              {todayLedger.xpEarned} / 40 XP
+              {todayLedger.xpEarned} / 60 XP
             </div>
           </div>
         </div>

@@ -115,14 +115,14 @@ export const Navbar: React.FC = () => {
                 href={link.href}
                 aria-label={link.label}
                 title={link.label}
-                className={`touch-target px-2.5 sm:px-3 py-1 text-sm font-bold border transition-colors flex items-center gap-1.5 ${
+                className={`touch-target px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold border transition-colors flex items-center gap-1 sm:gap-1.5 ${
                   isActive
                     ? 'bg-[var(--cyan)] text-[var(--ink)] border-[var(--border-color)] shadow-[2px_2px_0px_var(--border-color)]'
                     : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-color)]'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span className="hidden md:inline">{link.label}</span>
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
+                <span className="inline">{link.label}</span>
               </Link>
             );
           })}

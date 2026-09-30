@@ -9,7 +9,10 @@ import { defaultStorage } from '@/lib/storage/indexeddb';
 import {
   WEREWOLF_LINEAGE,
   TIGERHUMAN_LINEAGE,
+  HAWK_LINEAGE,
+  BULLMAN_LINEAGE,
   GAME_ECONOMY,
+  COMBINATION_TITLES,
 } from '@/lib/avatar/config';
 import {
   AvatarCustomization,
@@ -18,10 +21,12 @@ import {
   DEFAULT_AVATAR_CUSTOMIZATION,
   DEFAULT_AVATAR_PROGRESSION,
   DEFAULT_WALLET_STATE,
+  DEFAULT_FANTASY_MUSCLE_ALLOCATION,
 } from '@/lib/avatar/types';
 import {
   checkEvolutionEligibility,
   awakenLineage,
+  migrateToTenMuscleGroups,
 } from '@/lib/game/currency';
 import {
   ArrowLeft,
@@ -33,7 +38,12 @@ import {
   Lock,
   Flame,
   Wind,
+  Trophy,
+  Layers,
+  Clock,
 } from 'lucide-react';
+
+type PreviewStageMode = 'newly_awakened' | 'intermediate' | 'fully_evolved';
 
 export default function EvolutionGatePage() {
   const router = useRouter();
@@ -47,6 +57,7 @@ export default function EvolutionGatePage() {
   const [wallet, setWallet] = useState<WalletState>(DEFAULT_WALLET_STATE);
 
   const [selectedLineage, setSelectedLineage] = useState<'werewolf' | 'tigerhuman'>('werewolf');
+  const [previewStage, setPreviewStage] = useState<PreviewStageMode>('newly_awakened');
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -55,21 +66,81 @@ export default function EvolutionGatePage() {
     Promise.all([
       defaultStorage.getAvatar(),
       defaultStorage.getWallet(),
-    ]).then(([avatarData, walletData]) => {
-      if (avatarData?.customization) setCustomization(avatarData.customization);
-      if (avatarData?.progression) setProgression(avatarData.progression);
-      if (walletData) setWallet(walletData);
+    ]).then(async ([avatarData, walletData]) => {
+      let curCustomization = avatarData?.customization || DEFAULT_AVATAR_CUSTOMIZATION;
+      let curProgression = avatarData?.progression || DEFAULT_AVATAR_PROGRESSION;
+      let curWallet = walletData || DEFAULT_WALLET_STATE;
+
+      // Migrate if needed
+      if (curWallet.migrationMarker !== GAME_ECONOMY.MIGRATION_MARKER_V2) {
+        const mig = migrateToTenMuscleGroups(curWallet, curProgression);
+        if (mig.migrated) {
+          curWallet = mig.wallet;
+          curProgression = mig.avatar;
+          await defaultStorage.saveWallet(curWallet);
+          await defaultStorage.saveAvatar({ customization: curCustomization, progression: curProgression });
+        }
+      }
+
+      setCustomization(curCustomization);
+      setProgression(curProgression);
+      setWallet(curWallet);
     });
   }, []);
 
-  const eligibility = checkEvolutionEligibility(progression.muscleAllocation);
+  const eligibility = checkEvolutionEligibility(
+    progression.muscleAllocation,
+    progression.evolutionStage
+  );
   const hasAlreadyAwakened = progression.hasAwakened;
 
-  // Mock preview progression for 3D viewer
+  // Build stage-specific preview for the 3D viewer
+  const getStageMuscleAllocation = (stage: PreviewStageMode) => {
+    const base = { ...DEFAULT_FANTASY_MUSCLE_ALLOCATION };
+    if (stage === 'newly_awakened') {
+      // Slender baseline: all regions level 0
+      return base;
+    }
+    if (stage === 'intermediate') {
+      // Mid-stage development: level 4 in core groups
+      return {
+        ...base,
+        chest: 4,
+        lats: 4,
+        traps: 4,
+        front_side_shoulders: 4,
+        biceps: 4,
+        abs_core: 4,
+        thighs: 4,
+        calves: 4,
+      };
+    }
+    // Fully evolved: level 9 across all fantasy groups
+    const maxAlloc: Record<string, number> = {};
+    Object.keys(base).forEach((k) => {
+      maxAlloc[k] = 9;
+    });
+    return maxAlloc;
+  };
+
+  const getStageDevUnits = (stage: PreviewStageMode) => {
+    if (stage === 'newly_awakened') return 5;
+    if (stage === 'intermediate') return 45;
+    return 100; // Tier 5 Apex
+  };
+
   const previewProgression: AvatarProgression = {
     ...progression,
     lineage: selectedLineage,
     evolutionStage: 'awakened',
+    muscleAllocation: getStageMuscleAllocation(previewStage),
+    developmentUnitsTotal: getStageDevUnits(previewStage),
+    unlockedMutationTiers:
+      previewStage === 'newly_awakened'
+        ? [1]
+        : previewStage === 'intermediate'
+        ? [1, 2, 3]
+        : [1, 2, 3, 4, 5],
   };
 
   const currentLineageConfig =
@@ -93,7 +164,6 @@ export default function EvolutionGatePage() {
         progression: res.newAvatar,
       });
 
-      // Record transaction ledger entry
       const ledger = await defaultStorage.getTransactions();
       const awakenTx = {
         id: `tx_awakening_${Date.now()}`,
@@ -102,7 +172,7 @@ export default function EvolutionGatePage() {
         amount: 0,
         balanceAfter: wallet.growthPoints,
         referenceId: `lineage_${selectedLineage}`,
-        description: `Awakened ${selectedLineage.toUpperCase()} lineage. Muscle reset to slender base; 1.5x growth rate unlocked.`,
+        description: `Awakened ${selectedLineage.toUpperCase()} lineage. Archived human form; muscle reset to slender base; 1.5x growth rate unlocked.`,
       };
       await defaultStorage.saveTransactions([awakenTx, ...ledger]);
 
@@ -128,7 +198,7 @@ export default function EvolutionGatePage() {
           <span>Back to Character</span>
         </Link>
         <div className="text-xs font-bold text-[var(--text-secondary)]">
-          Evolution Threshold: All 6 regions Lv.4
+          Evolution Threshold: All 10 Human regions Lv.3 (240 GP)
         </div>
       </div>
 
@@ -140,30 +210,91 @@ export default function EvolutionGatePage() {
             <span>Primal Awakening Active: {progression.lineage.toUpperCase()}</span>
           </div>
           <p className="text-xs mt-1">
-            Your character has already awakened their permanent primal lineage with a 1.5× muscle development multiplier.
+            Your character has already awakened their permanent primal lineage with 15 fantasy muscle groups and a 1.5× muscle development multiplier.
           </p>
         </div>
       )}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: 3D Preview of Selected Lineage */}
+        {/* Left: 3D Preview of Selected Lineage + Stage Switcher */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           <MangaCard title="Awakened Form Preview" badge={selectedLineage.toUpperCase()}>
+            {/* Stage Selector: Newly Awakened / Intermediate / Fully Evolved */}
+            <div className="flex items-center gap-1.5 p-1 bg-[var(--surface-inset)] border border-[var(--border-color)] mb-3">
+              {(
+                [
+                  { id: 'newly_awakened', label: '1. Slender Base' },
+                  { id: 'intermediate', label: '2. Mid Mutation' },
+                  { id: 'fully_evolved', label: '3. Apex Form' },
+                ] as const
+              ).map((stage) => (
+                <button
+                  key={stage.id}
+                  type="button"
+                  onClick={() => setPreviewStage(stage.id)}
+                  className={`flex-1 py-1 px-2 text-[10px] font-black uppercase transition-all ${
+                    previewStage === stage.id
+                      ? 'bg-[var(--cyan)] text-[var(--ink)] shadow-[1px_1px_0px_var(--border-color)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {stage.label}
+                </button>
+              ))}
+            </div>
+
             <AvatarViewer
               customization={customization}
               progression={previewProgression}
-              className="w-full h-[420px]"
+              className="w-full h-[400px]"
             />
+
             <div className="p-3 bg-[var(--surface-inset)] border border-[var(--border-color)] text-xs text-center mt-3">
               <span className="font-black text-[var(--text-primary)]">
                 {currentLineageConfig.archetype}
               </span>
               <p className="text-[11px] text-[var(--text-secondary)] mt-1">
-                {currentLineageConfig.movementStyle}
+                {currentLineageConfig.silhouetteDescription}
               </p>
             </div>
           </MangaCard>
+
+          {/* Upcoming Lineages Notice (Hawk & Bullman) */}
+          <div className="manga-panel p-3.5 bg-[var(--surface-panel)] border-2 border-[var(--border-color)]">
+            <div className="flex items-center gap-1.5 text-xs font-black uppercase text-[var(--text-secondary)] mb-2">
+              <Clock className="w-3.5 h-3.5" />
+              <span>Future Evolutions (In Development)</span>
+            </div>
+            <div className="space-y-2">
+              <div className="p-2 bg-[var(--surface-inset)] border border-[var(--border-color)] flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-extrabold">{HAWK_LINEAGE.name}</span>
+                  <span className="text-[10px] text-[var(--text-secondary)] block">
+                    {HAWK_LINEAGE.archetype}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 text-[9px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                  Preview Only
+                </span>
+              </div>
+
+              <div className="p-2 bg-[var(--surface-inset)] border border-[var(--border-color)] flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-extrabold">{BULLMAN_LINEAGE.name}</span>
+                  <span className="text-[10px] text-[var(--text-secondary)] block">
+                    {BULLMAN_LINEAGE.archetype}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 text-[9px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                  Preview Only
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-[var(--text-secondary)] mt-2">
+              Both advanced lineages will be accessible from either mature initial lineage in subsequent updates.
+            </p>
+          </div>
         </div>
 
         {/* Right: Path Selector & Milestone Details */}
@@ -191,10 +322,10 @@ export default function EvolutionGatePage() {
                   )}
                 </div>
                 <div className="text-xs font-bold text-purple-400 mb-1">
-                  Resolve • Loyalty • Protection
+                  Tall • Sinewy • Predatory Stance
                 </div>
                 <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-                  Broad shoulders, strong back, grounded rooted stance, amber lunar eyes, and lupine features.
+                  Tall, elongated, slender and sinewy. Long limbs and an intentional forward-hunched creature stance. Amber eyes, dark fur mantle, and lupine anatomy. Remains taller and leaner than Tigerhuman even at maximum development.
                 </p>
               </button>
 
@@ -218,10 +349,10 @@ export default function EvolutionGatePage() {
                   )}
                 </div>
                 <div className="text-xs font-bold text-amber-400 mb-1">
-                  Focus • Adaptability • Precision
+                  Stocky • Bulky • Grounded Posture
                 </div>
                 <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
-                  Athletic silhouette, developed legs & torso, fluid balance tail, jade slit pupils, and kinetic stripes.
+                  Stocky, wide, thick and bulky. Dense torso, substantial limbs, and low grounded posture. Feline face, kinetic tiger stripes, rounded ears, and prehensile tail. Remains visibly broader and heavier than Werewolf at every stage.
                 </p>
               </button>
             </div>
@@ -268,9 +399,10 @@ export default function EvolutionGatePage() {
                 Awakening Protocol
               </div>
               <ul className="text-xs text-[var(--text-secondary)] space-y-1 mb-4">
-                <li>• Identical XP/GP earning rates for both lineages.</li>
-                <li>• 1.5× muscle development gain per GP in awakened form.</li>
-                <li>• Permanent lineage choice for this character release.</li>
+                <li>• 15 specialized fantasy muscle groups unlock upon awakening.</li>
+                <li>• 1.5× muscle development gain per GP in awakened form (12 units/level).</li>
+                <li>• Previous human form is archived in your history ledger.</li>
+                <li>• Permanent lineage choice for this release.</li>
               </ul>
 
               {/* Requirement Check */}
@@ -278,7 +410,7 @@ export default function EvolutionGatePage() {
                 <div className="p-3 mb-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center gap-2">
                   <Lock className="w-4 h-4 shrink-0" />
                   <span>
-                    Evolution Locked: All six regions must reach Level 4 in the Growth Studio first.
+                    Evolution Locked: All ten muscle regions must reach Level 3 in the Growth Studio first.
                     (Missing: {eligibility.missingRegions.join(', ')})
                   </span>
                 </div>
@@ -299,7 +431,7 @@ export default function EvolutionGatePage() {
         </div>
       </div>
 
-      {/* Awakening Confirmation Modal */}
+      {/* Awakening Confirmation Modal with Explicit Reset Explanation */}
       {showConfirmModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-lg">
@@ -310,16 +442,17 @@ export default function EvolutionGatePage() {
                   <span>Important Awakening Law</span>
                 </div>
                 <p className="leading-relaxed">
-                  “Your muscular development resets. Your lifetime XP, identity, collection and achievements remain. Your new form develops faster (1.5× muscle development gain per GP).”
+                  “Your muscular development resets to the new species’ slender baseline (0 across 15 fantasy groups). Your previous human form will be archived. Your lifetime XP, identity, collection, unlocked titles and unspent GP remain completely intact. Your new form develops faster (1.5× muscle development gain per GP).”
                 </p>
               </div>
 
               <div className="text-xs space-y-2 mb-6">
                 <div>• Chosen Lineage: <strong>{selectedLineage.toUpperCase()}</strong></div>
-                <div>• Unspent GP & Lifetime XP: <strong>Preserved</strong></div>
+                <div>• Unspent GP & Lifetime XP: <strong>100% Preserved ({wallet.growthPoints} GP)</strong></div>
                 <div>• Face, Skin, Hair & Name: <strong>Preserved</strong></div>
-                <div>• Base Muscle Development: <strong>Reset to slender base</strong></div>
-                <div>• Multiplier: <strong>1.5× muscle gain per GP</strong></div>
+                <div>• Previous Form: <strong>Archived in ledger</strong></div>
+                <div>• Base Muscle Development: <strong>Reset to slender baseline across 15 fantasy groups</strong></div>
+                <div>• Growth Multiplier: <strong>1.5× units per GP</strong></div>
               </div>
 
               {errorText && (

@@ -44,9 +44,13 @@ export interface StaticGateBoss {
 
 export interface DailyLedger {
   dateKey: string; // YYYY-MM-DD
-  slotFlag: boolean;
-  reflectionFlag: boolean;
-  xpEarned: number; // Max 40 per day
+  slotFlag: boolean;               // Daily participation (30 XP/GP)
+  reflectionFlag: boolean;         // Reflection (10 XP/GP)
+  plannedPracticeFlag?: boolean;   // Planned practice bonus (10 XP/GP)
+  masteryBonusFlag?: boolean;      // Learning/mastery bonus (5 XP/GP)
+  boosterContribution?: number;    // Optional booster contribution (max 5 XP/GP)
+  xpEarned: number;                // Shared daily max: 60
+  gpEarned?: number;               // Shared daily max: 60
   eventIds: string[];
 }
 
@@ -67,10 +71,18 @@ export interface ProgressionState {
   };
 }
 
+export type RewardEventType =
+  | 'slot'
+  | 'reflection'
+  | 'planned_practice'
+  | 'mastery'
+  | 'booster';
+
 export interface RewardEvent {
   eventId: string;
-  type: 'slot' | 'reflection';
+  type: RewardEventType;
   source: MovementSource;
   dateKey: string;
   xpAwarded: number;
+  boosterAmount?: number;
 }

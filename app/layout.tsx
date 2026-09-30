@@ -4,9 +4,11 @@ import { I18nProvider } from '@/lib/i18n/context';
 import { Navbar } from '@/components/system/Navbar';
 import { LiveRegion } from '@/components/system/LiveRegion';
 
+import { BRAND_CONFIG } from '@/lib/config/brand';
+
 export const metadata: Metadata = {
-  title: 'Kinetra — The Movement System',
-  description: 'An original manga-inspired movement practice progression game rewarding participation, practice and recovery.',
+  title: BRAND_CONFIG.fullTitle,
+  description: BRAND_CONFIG.description,
   manifest: '/manifest.json',
 };
 
