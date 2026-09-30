@@ -9,6 +9,7 @@ import { MediaPipePoseProvider } from '@/lib/pose/mediapipe-service';
 import { NormalizedLandmark, POSE_LANDMARKS } from '@/lib/pose/types';
 import { SportsSessionSummary } from '@/lib/sports/types';
 import { DrillReviewModal } from '@/components/sports/DrillReviewModal';
+import { DrillDemonstrator } from '@/components/sports/DrillDemonstrator';
 import { MangaCard } from '@/components/system/MangaCard';
 import {
   ArrowLeft,
@@ -269,25 +270,18 @@ export default function LiveDrillPage() {
         </div>
       </div>
 
-      {/* Screen 1: Instructions & Neutral Silhouette Setup */}
+      {/* Screen 1: 3D Movement Demonstrator & Setup */}
       {setupStep === 'instructions' && (
-        <MangaCard title="Drill Setup & Framing" badge="STEP 1">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-            {/* Neutral Silhouette Visual Container */}
-            <div className="manga-panel aspect-square bg-[var(--surface-inset)] flex flex-col items-center justify-center p-6 text-center border-2 border-[var(--border-color)] relative overflow-hidden">
-              <div className="w-24 h-48 border-2 border-dashed border-[var(--border-color)] rounded-lg flex flex-col items-center justify-between p-3 bg-white/40">
-                <div className="w-8 h-8 rounded-full border border-[var(--border-color)] bg-[var(--cyan)]" />
-                <div className="w-12 h-16 border border-[var(--border-color)] bg-[var(--paper)]" />
-                <div className="w-10 h-14 border border-[var(--border-color)] bg-[var(--violet)]" />
-              </div>
-              <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase mt-3">
-                Neutral Motion Framing Outline
-              </span>
+        <MangaCard title="Drill Demonstration & Camera Setup" badge="DEMONSTRATION">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Animated 3D Demonstrator */}
+            <div className="lg:col-span-7">
+              <DrillDemonstrator drillId={drill.id} />
             </div>
 
-            {/* Setup Checklist */}
-            <div className="flex flex-col gap-4">
-              <h3 className="font-black text-base uppercase">Setup Recommendations:</h3>
+            {/* Setup Recommendations & Mode Toggle */}
+            <div className="lg:col-span-5 flex flex-col gap-4">
+              <h3 className="font-black text-base uppercase">Movement Protocol:</h3>
               <ol className="list-decimal pl-5 text-sm text-[var(--text-secondary)] space-y-2">
                 {drill.setupSteps.map((step, idx) => (
                   <li key={idx} className="font-medium leading-relaxed">
@@ -296,17 +290,24 @@ export default function LiveDrillPage() {
                 ))}
               </ol>
 
-              <div className="p-3 bg-[var(--surface-panel)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
-                <strong>Mode:</strong> {isManualMode ? 'Manual / Tap Counter' : 'Local Computer Vision'} •{' '}
-                <strong>Target:</strong> {drill.targetIntervalCount} intervals in {drill.defaultDurationSec}s.
+              <div className="p-3 bg-[var(--surface-panel)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] space-y-1">
+                <div>
+                  <strong>Session Mode:</strong> {isManualMode ? 'Manual / Tap Cadence' : 'Optical Computer Vision'}
+                </div>
+                <div>
+                  <strong>Target Pace:</strong> {drill.targetIntervalCount} intervals in {drill.defaultDurationSec}s
+                </div>
+                <div>
+                  <strong>Sensors Observed:</strong> {drill.supportedObservations.join(', ')}
+                </div>
               </div>
 
               <button
                 onClick={handleStartPractice}
-                className="touch-target px-8 py-3 bg-[var(--cyan)] text-[var(--ink)] font-black uppercase text-sm border-2 border-[var(--border-color)] shadow-[3px_3px_0px_var(--border-color)] hover:translate-x-[-1px] hover:translate-y-[-1px] mt-2 inline-flex items-center justify-center gap-2"
+                className="touch-target px-8 py-3.5 bg-[var(--cyan)] text-[var(--ink)] font-black uppercase text-sm border-2 border-[var(--border-color)] shadow-[3px_3px_0px_var(--border-color)] hover:translate-x-[-1px] hover:translate-y-[-1px] mt-2 inline-flex items-center justify-center gap-2"
               >
                 <Play className="w-4 h-4" />
-                Begin Drill
+                Begin Practice Drill
               </button>
             </div>
           </div>
